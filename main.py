@@ -10,8 +10,8 @@ def fetch_historical_data(list_of_tickers, start, end, interval):
     end = pd.to_datetime(end).tz_localize("America/New_York")
     filename = get_filename(interval)
 
-    if Path("historical_data.csv").exists():
-        compiled_history = load_from_csv("historical_data.csv")
+    if Path(filename).exists():
+        compiled_history = load_from_csv(filename)
         present_tickers = []
         missing_tickers = []
         fully_checked_tickers = []
@@ -36,6 +36,9 @@ def fetch_historical_data(list_of_tickers, start, end, interval):
                     history = ticker_object.history(start=start, end=ticker_specific_dataframe["Date"].min(), interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
                     history["Ticker"] = ticker
 
+                    if "Datetime" in history.columns:
+                        history = history.rename(columns={"Datetime": "Date"})
+
                     if history.empty:
                         pass
                     else:
@@ -45,6 +48,9 @@ def fetch_historical_data(list_of_tickers, start, end, interval):
                     ticker_object = yf.Ticker(ticker)
                     history = ticker_object.history(start=ticker_specific_dataframe["Date"].max(), end=end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
                     history["Ticker"] = ticker
+
+                    if "Datetime" in history.columns:
+                        history = history.rename(columns={"Datetime": "Date"})
 
                     if history.empty:
                         pass
@@ -57,11 +63,15 @@ def fetch_historical_data(list_of_tickers, start, end, interval):
             ticker_object = yf.Ticker(ticker)
             history = ticker_object.history(start=start, end=end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
             history["Ticker"] = ticker
+
+            if "Datetime" in history.columns:
+                history = history.rename(columns={"Datetime": "Date"})
+
             compiled_history = pd.concat([compiled_history, history], ignore_index=True)
             fully_checked_tickers.append(ticker)   
       
         compiled_history.drop_duplicates(subset=["Date", "Ticker"], inplace=True)
-        save_to_csv(compiled_history, "historical_data.csv")    
+        save_to_csv(compiled_history, filename)    
         
         combined_resulting_dataframe = pd.DataFrame(columns=COLUMN_NAMES) # Creating an empty dataframe so each tickers filtered data can be appeneded on and representred as one big dataframe
         # Forces each column into the correct data type
@@ -93,13 +103,18 @@ def fetch_historical_data(list_of_tickers, start, end, interval):
             "Ticker": "string"
         })
 
-        for single_ticker in list_of_tickers:
-            ticker = yf.Ticker(single_ticker)
-            history = ticker.history(start=start, end=end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
-            history["Ticker"] = single_ticker
-            compiled_history = pd.concat([compiled_history, history], ignore_index=True)
+        for ticker in list_of_tickers:
+            ticker_object = yf.Ticker(ticker)
+            history = ticker_object.history(start=start, end=end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
+            history["Ticker"] = ticker
 
-        save_to_csv(compiled_history, "historical_data.csv")
+            if "Datetime" in history.columns:
+                history = history.rename(columns={"Datetime": "Date"})
+
+            compiled_history = pd.concat([compiled_history, history], ignore_index=True)
+        
+        print(compiled_history.to_string())
+        save_to_csv(compiled_history, filename)
 
 def fetch_live_price(tickers):
     for ticker in tickers:
@@ -112,7 +127,7 @@ def save_to_csv(dataframe, filename):
 def load_from_csv(filename):
     if Path(filename).exists():
         df = pd.read_csv(filename)
-        df["Date"] = pd.to_datetime(df["Date"])
+        df["Date"] = pd.to_datetime(df["Date"], utc=True).dt.tz_convert("America/New_York")
         return df
     else:
         print("File does not exist")
@@ -120,9 +135,15 @@ def load_from_csv(filename):
 def get_filename(interval):
     return f"data/historical_data_{interval}.csv"
 
+"""
+Testing for 1d
+"""
 # fetch_historical_data(["AAPL", "AMZN", "MSFT"], "2025-08-01", "2025-09-01", "1d")
 # fetch_historical_data(["MSFT", "TSLA"], "2025-08-10", "2025-08-23", "1d")
-# fetch_historical_data(["MSFT", "AMZN", "META", "GOOGL"], "2025-09-01", "2025-09-10", "1d")
-# fetch_historical_data(["AAPL", "MSFT"], "2025-06-10", "2025-06-24", "1d")
+# fetch_historical_data(["AAPL", "GOOGL"], "2023-01-01", "2025-01-01", "1d")
+# fetch_historical_data(["MSFT", "AMZN"], "2022-01-01", "2025-01-01", "1d")
 
+"""
+Testing for live prices
+"""
 # fetch_live_price(["AAPL", "MSFT", "TSLA", "AMZN"])
