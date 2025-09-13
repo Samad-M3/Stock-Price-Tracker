@@ -4,6 +4,20 @@ from pathlib import Path
 from datetime import datetime
 
 COLUMN_NAMES = ["Date", "Open", "High", "Low", "Close", "Volume", "Ticker"]
+INTERVAL_TO_TIMEDIFF = {
+    "1m": pd.Timedelta(minutes=1),
+    "2m": pd.Timedelta(minutes=2),
+    "5m": pd.Timedelta(minutes=5),
+    "15m": pd.Timedelta(minutes=15),
+    "30m": pd.Timedelta(minutes=30),
+    "60m": pd.Timedelta(hours=1),
+    "90m": pd.Timedelta(minutes=90),
+    "1d": pd.Timedelta(days=1),
+    "5d": pd.Timedelta(days=5),
+    "1wk": pd.Timedelta(weeks=1),
+    "1mo": pd.Timedelta(days=30),
+    "3mo": pd.Timedelta(days=90)
+}
 
 def fetch_historical_data(list_of_tickers, start, end, interval):
     start = pd.to_datetime(start).tz_localize("America/New_York")
@@ -24,6 +38,21 @@ def fetch_historical_data(list_of_tickers, start, end, interval):
 
         for ticker in present_tickers:
             ticker_specific_dataframe = compiled_history[compiled_history["Ticker"] == ticker] # Returns a dataframe for just that ticker
+
+            internal_gaps = get_internal_missing_ranges(ticker_specific_dataframe, start, end, interval)
+            ticker_object = yf.Ticker(ticker)
+            for gap_start, gap_end in internal_gaps:
+                history = ticker_object.history(start=gap_start, end=gap_end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
+                history["Ticker"] = ticker
+
+                if "Datetime" in history.columns:
+                        history = history.rename(columns={"Datetime": "Date"})
+
+                if history.empty:
+                        pass
+                else:
+                    compiled_history = pd.concat([compiled_history, history], ignore_index=True)
+
             """
             Check to see if the shortest date in the dataframe is earlier than or equal to the start date
             Check to see if the longest date in the dateframe is later than or equal to the end date
@@ -135,13 +164,29 @@ def load_from_csv(filename):
 def get_filename(interval):
     return f"data/historical_data_{interval}.csv"
 
+def get_internal_missing_ranges(dataframe, start, end, interval):
+    requested_range_dataframe  = dataframe[(dataframe["Date"] >= start) & (dataframe["Date"] <= end)].sort_values(by="Date")
+    gaps = []
+
+    # Case 1: nothing in range → entire range is a gap
+    if requested_range_dataframe.empty:
+        return [(start, end)]
+    
+    # Case 2: check between existing rows
+    for i in range(len(requested_range_dataframe) - 1):
+        current_date = requested_range_dataframe.iloc[i]["Date"]
+        next_date = requested_range_dataframe.iloc[i+1]["Date"]
+        if next_date > current_date + pd.Timedelta(INTERVAL_TO_TIMEDIFF[interval]):
+            gaps.append((current_date + pd.Timedelta(INTERVAL_TO_TIMEDIFF[interval]), next_date))
+
+    return gaps
+
 """
 Testing for 1d
 """
-# fetch_historical_data(["AAPL", "AMZN", "MSFT"], "2025-08-01", "2025-09-01", "1d")
-# fetch_historical_data(["MSFT", "TSLA"], "2025-08-10", "2025-08-23", "1d")
-# fetch_historical_data(["AAPL", "GOOGL"], "2023-01-01", "2025-01-01", "1d")
-# fetch_historical_data(["MSFT", "AMZN"], "2022-01-01", "2025-01-01", "1d")
+# fetch_historical_data(["AAPL"], "2025-08-12", "2025-08-18", "1d")
+# fetch_historical_data(["AAPL"], "2025-08-01", "2025-09-01", "1d")
+fetch_historical_data(["AAPL"], "2025-08-01", "2025-09-01", "1d")
 
 """
 Testing for live prices
