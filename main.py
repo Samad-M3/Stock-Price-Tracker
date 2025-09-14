@@ -2,6 +2,9 @@ import yfinance as yf
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
+import seaborn as sns
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 
 COLUMN_NAMES = ["Date", "Open", "High", "Low", "Close", "Volume", "Ticker"]
 INTERVAL_TO_TIMEDIFF = {
@@ -223,6 +226,68 @@ def analyse_stock_data(ticker, days_range):
     else:
         print(f"{ticker} does not exist in the dataframe")
 
+def visualise_stock_data(ticker, days_range):
+    compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
+    requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
+    
+    # daily_percentage_change(ticker, days_range, requested_range_dataframe)
+    volume_over_time(ticker, days_range, requested_range_dataframe)
+
+def daily_percentage_change(ticker, days_range, requested_range_dataframe):
+    requested_range_dataframe["% daily change"] = requested_range_dataframe["Close"].pct_change() * 100
+    requested_range_dataframe = requested_range_dataframe.dropna(subset=["% daily change"])
+    requested_range_dataframe["Positve/Negative"] = requested_range_dataframe["% daily change"].apply(lambda x: "Positive" if x >= 0 else "Negative")
+    requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
+    colours = {
+        "Positive": "#2ecc71",
+        "Negative": "#e74c3c"
+    }
+    
+    # print(requested_range_dataframe)
+
+    fig = plt.figure(figsize=(8, 5))
+    fig.canvas.manager.set_window_title(f"{ticker} - Daily % Change")
+
+    sns.set_style("whitegrid")
+    sns.set_context("notebook")
+
+    plt.axhline(0, color = "black", linewidth = 1)
+    sns.barplot(x="Shortend Date", y="% daily change", data=requested_range_dataframe, hue="Positve/Negative", palette=colours)
+
+    plt.title(f"{ticker} - Daily Percentage Change (Last {days_range} days)")
+    plt.xlabel("Date")
+    plt.ylabel("% change")
+    plt.xticks(rotation=45)
+    plt.legend([],[], frameon=False)
+
+    plt.tight_layout()
+    plt.show()
+
+def volume_over_time(ticker, days_range, requested_range_dataframe):
+    requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
+
+    print(requested_range_dataframe)
+
+    fig = plt.figure(figsize=(8, 5))
+    fig.canvas.manager.set_window_title(f"{ticker} - Volume Over Time")
+
+    sns.set_style("whitegrid")
+    sns.set_context("notebook")
+
+    sns.barplot(x="Shortend Date", y="Volume", data=requested_range_dataframe, color="#3498db")
+
+    plt.title(f"{ticker} - Daily Trading Volume (Last {days_range} days)")
+    plt.xlabel("Date")
+    plt.ylabel("Volume")
+    plt.xticks(rotation=45)
+    
+    # Format y-axis in millions for readability
+    ax = plt.gca()
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{int(x/1e6)}M'))
+
+    plt.tight_layout()
+    plt.show()
+
 def save_to_csv(dataframe, filename):
     dataframe.to_csv(filename, index=False)
 
@@ -273,4 +338,8 @@ Testing for live prices
 Testing for data analysis
 """
 # analyse_stock_data("AAPL", 30)
-analyse_stock_data("TSLA", 30)
+
+"""
+Testing for visualisation
+"""
+visualise_stock_data("AAPL", 30)
