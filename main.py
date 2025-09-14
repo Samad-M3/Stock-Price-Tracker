@@ -5,6 +5,7 @@ from datetime import datetime
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+import mplfinance as mpf
 
 COLUMN_NAMES = ["Date", "Open", "High", "Low", "Close", "Volume", "Ticker"]
 INTERVAL_TO_TIMEDIFF = {
@@ -203,10 +204,6 @@ def analyse_stock_data(ticker, days_range):
         range_percentage_change = ((new_close - first_close) / first_close) * 100
         requested_range_dataframe["5D MA"] = requested_range_dataframe["Close"].rolling(window=5).mean()
 
-        requested_range_dataframe_copy = requested_range_dataframe.copy().dropna()
-        dates = [date.strftime("%Y-%m-%d") for date in requested_range_dataframe_copy["Date"]]
-        values = [value for value in requested_range_dataframe_copy["5D MA"]]
-
         """
         Printing out the stats
         """
@@ -219,10 +216,6 @@ def analyse_stock_data(ticker, days_range):
         print(f"Average Closing Price: ${avg_closing:.2f}")
         print(f"Average Volume: {avg_volume:,} shares")
         print(f"% Change Over Range: {range_percentage_change:+.2f}%\n")
-        # print(f"\n5-Day Moving Average Trend:")
-
-        # for i in range(len(dates)):
-        #     print(f"{dates[i]}: ${values[i]:.2f}")
     else:
         print(f"{ticker} does not exist in the dataframe")
 
@@ -231,7 +224,9 @@ def visualise_stock_data(ticker, days_range):
     requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
     
     # daily_percentage_change(ticker, days_range, requested_range_dataframe)
-    volume_over_time(ticker, days_range, requested_range_dataframe)
+    # volume_over_time(ticker, days_range, requested_range_dataframe)
+    closing_price_vs_moving_average(ticker, days_range, requested_range_dataframe)
+
 
 def daily_percentage_change(ticker, days_range, requested_range_dataframe):
     requested_range_dataframe["% daily change"] = requested_range_dataframe["Close"].pct_change() * 100
@@ -266,7 +261,7 @@ def daily_percentage_change(ticker, days_range, requested_range_dataframe):
 def volume_over_time(ticker, days_range, requested_range_dataframe):
     requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
 
-    print(requested_range_dataframe)
+    # print(requested_range_dataframe)
 
     fig = plt.figure(figsize=(8, 5))
     fig.canvas.manager.set_window_title(f"{ticker} - Volume Over Time")
@@ -287,6 +282,31 @@ def volume_over_time(ticker, days_range, requested_range_dataframe):
 
     plt.tight_layout()
     plt.show()
+
+def closing_price_vs_moving_average(ticker, days_range, requested_range_dataframe):
+    requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
+    requested_range_dataframe["5D MA"] = requested_range_dataframe["Close"].rolling(window=5).mean()
+
+    print(requested_range_dataframe)
+
+    fig = plt.figure(figsize=(8, 5))
+    fig.canvas.manager.set_window_title(f"{ticker} - Closing Price vs Moving Average")
+
+    sns.set_style("whitegrid")
+    sns.set_context("notebook")
+
+    sns.lineplot(x="Shortend Date", y="Close", data=requested_range_dataframe, label="Closing Price", color="#2980b9")
+    sns.lineplot(x="Shortend Date", y="5D MA", data=requested_range_dataframe, label="5-Day MA", color="#f39c12")
+
+    plt.title(f"{ticker} - Closing Price with 5-Day Moving Average (Last {days_range} days)")
+    plt.xlabel("Date")
+    plt.ylabel("Price ($)")
+    plt.xticks(rotation=45)
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
+
 
 def save_to_csv(dataframe, filename):
     dataframe.to_csv(filename, index=False)
