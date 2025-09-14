@@ -25,7 +25,7 @@ def fetch_historical_data(list_of_tickers, start, end, interval):
     filename = get_filename(interval)
 
     if Path(filename).exists():
-        compiled_history = load_from_csv(filename)
+        compiled_history = load_from_csv(filename).sort_values(by=["Ticker", "Date"])
         present_tickers = []
         missing_tickers = []
         fully_checked_tickers = []
@@ -100,6 +100,7 @@ def fetch_historical_data(list_of_tickers, start, end, interval):
             fully_checked_tickers.append(ticker)   
       
         compiled_history.drop_duplicates(subset=["Date", "Ticker"], inplace=True)
+        compiled_history.sort_values(by=["Ticker", "Date"], inplace=True)
         save_to_csv(compiled_history, filename)    
         
         combined_resulting_dataframe = pd.DataFrame(columns=COLUMN_NAMES) # Creating an empty dataframe so each tickers filtered data can be appeneded on and representred as one big dataframe
@@ -143,12 +144,84 @@ def fetch_historical_data(list_of_tickers, start, end, interval):
             compiled_history = pd.concat([compiled_history, history], ignore_index=True)
         
         print(compiled_history.to_string())
+        compiled_history.sort_values(by=["Ticker", "Date"], inplace=True)
         save_to_csv(compiled_history, filename)
 
 def fetch_live_price(tickers):
     for ticker in tickers:
         current_ticker = yf.Ticker(ticker)
         print(f"{ticker} current price = ${current_ticker.fast_info['lastPrice']:.2f}")
+
+def analyse_stock_data(ticker, days_range):
+    compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
+    
+    if ticker in compiled_history["Ticker"].values:
+        ticker_specific_dataframe = compiled_history[compiled_history["Ticker"] == ticker]
+
+        ticker_object = yf.Ticker(ticker)
+        history = ticker_object.history(period="100d").reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
+        most_recent_trading_day = history["Date"].iloc[-1]
+        start_trading_day = history["Date"].iloc[-days_range]
+
+        if ticker_specific_dataframe["Date"].max() < most_recent_trading_day:
+            print("Max date is less than most recent trading day")
+            fetch_historical_data([ticker], start_trading_day.strftime('%Y-%m-%d'), (most_recent_trading_day + pd.Timedelta(days=1)).strftime('%Y-%m-%d'), "1d")
+        elif ticker_specific_dataframe["Date"].max() == most_recent_trading_day:
+            print("Max date is equal to the most recent trading day")
+
+            valid_days = ticker_object.history(period=f"{days_range}d").reset_index()["Date"]
+            actual_days = ticker_specific_dataframe.sort_values("Date").tail(days_range)["Date"]
+
+            if set(valid_days) == set(actual_days):
+                pass
+            else:
+                fetch_historical_data([ticker], start_trading_day.strftime('%Y-%m-%d'), (most_recent_trading_day + pd.Timedelta(days=1)).strftime('%Y-%m-%d'), "1d")
+        else:
+            pass
+
+        """
+        Rough Workings
+        """
+        compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
+
+        requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
+        # print(requested_range_dataframe)
+
+        new_close = requested_range_dataframe["Close"].iloc[-1]
+        old_close = requested_range_dataframe["Close"].iloc[-2]
+
+        first_close = requested_range_dataframe["Close"].iloc[0]
+
+        daily_percentage_change = ((new_close - old_close) / old_close) * 100 
+        highest_high = requested_range_dataframe["High"].max()
+        lowest_low = requested_range_dataframe["Low"].min()
+        avg_closing = requested_range_dataframe["Close"].mean()
+        avg_volume = round(requested_range_dataframe["Volume"].mean())
+        range_percentage_change = ((new_close - first_close) / first_close) * 100
+        requested_range_dataframe["5D MA"] = requested_range_dataframe["Close"].rolling(window=5).mean()
+
+        requested_range_dataframe_copy = requested_range_dataframe.copy().dropna()
+        dates = [date.strftime("%Y-%m-%d") for date in requested_range_dataframe_copy["Date"]]
+        values = [value for value in requested_range_dataframe_copy["5D MA"]]
+
+        """
+        Printing out the stats
+        """
+
+        print(f"\n{ticker} Stock Analysis (Past {days_range} days)")
+
+        print(f"\nToday's % Change: {daily_percentage_change:+.2f}%")
+        print(f"Range High: ${highest_high:.2f}")
+        print(f"Range Low: ${lowest_low:.2f}")
+        print(f"Average Closing Price: ${avg_closing:.2f}")
+        print(f"Average Volume: {avg_volume:,} shares")
+        print(f"% Change Over Range: {range_percentage_change:+.2f}%\n")
+        # print(f"\n5-Day Moving Average Trend:")
+
+        # for i in range(len(dates)):
+        #     print(f"{dates[i]}: ${values[i]:.2f}")
+    else:
+        print(f"{ticker} does not exist in the dataframe")
 
 def save_to_csv(dataframe, filename):
     dataframe.to_csv(filename, index=False)
@@ -182,13 +255,22 @@ def get_internal_missing_ranges(dataframe, start, end, interval):
     return gaps
 
 """
-Testing for 1d
+Testing for historical data
 """
 # fetch_historical_data(["AAPL"], "2025-08-12", "2025-08-18", "1d")
 # fetch_historical_data(["AAPL"], "2025-08-01", "2025-09-01", "1d")
-fetch_historical_data(["AAPL"], "2025-08-01", "2025-09-01", "1d")
+# fetch_historical_data(["AAPL"], "2025-08-01", "2025-09-01", "1d")
+# fetch_historical_data(["MSFT", "AAPL"], "2025-08-24", "2025-09-08", "1d")
+# fetch_historical_data(["AAPL"], "2025-08-13", "2025-09-13", "1d")
+# fetch_historical_data(["AAPL"], "2025-07-01", "2025-08-01", "1d")
 
 """
 Testing for live prices
 """
 # fetch_live_price(["AAPL", "MSFT", "TSLA", "AMZN"])
+
+"""
+Testing for data analysis
+"""
+# analyse_stock_data("AAPL", 30)
+analyse_stock_data("TSLA", 30)
