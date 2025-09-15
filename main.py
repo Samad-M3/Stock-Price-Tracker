@@ -5,7 +5,6 @@ from datetime import datetime
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-import mplfinance as mpf
 
 COLUMN_NAMES = ["Date", "Open", "High", "Low", "Close", "Volume", "Ticker"]
 INTERVAL_TO_TIMEDIFF = {
@@ -223,15 +222,16 @@ def visualise_stock_data(ticker, days_range):
     compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
     requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
     
-    # daily_percentage_change(ticker, days_range, requested_range_dataframe)
-    # volume_over_time(ticker, days_range, requested_range_dataframe)
-    closing_price_vs_moving_average(ticker, days_range, requested_range_dataframe)
+    # generate_daily_percentage_change_chart(ticker, days_range, requested_range_dataframe)
+    # generate_volume_over_time_chart(ticker, days_range, requested_range_dataframe)
+    # generate_closing_price_vs_moving_average_chart(ticker, days_range, requested_range_dataframe)
+    # generate_high_low_range_chart(ticker, days_range, requested_range_dataframe)
+    # generate_cumulative_returns_chart(ticker, days_range, requested_range_dataframe, 100000)
 
-
-def daily_percentage_change(ticker, days_range, requested_range_dataframe):
+def generate_daily_percentage_change_chart(ticker, days_range, requested_range_dataframe):
     requested_range_dataframe["% daily change"] = requested_range_dataframe["Close"].pct_change() * 100
-    requested_range_dataframe = requested_range_dataframe.dropna(subset=["% daily change"])
-    requested_range_dataframe["Positve/Negative"] = requested_range_dataframe["% daily change"].apply(lambda x: "Positive" if x >= 0 else "Negative")
+    requested_range_dataframe = requested_range_dataframe.dropna(subset=["% daily change"]).copy()
+    requested_range_dataframe["Positive/Negative"] = requested_range_dataframe["% daily change"].apply(lambda x: "Positive" if x >= 0 else "Negative")
     requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
     colours = {
         "Positive": "#2ecc71",
@@ -247,9 +247,9 @@ def daily_percentage_change(ticker, days_range, requested_range_dataframe):
     sns.set_context("notebook")
 
     plt.axhline(0, color = "black", linewidth = 1)
-    sns.barplot(x="Shortend Date", y="% daily change", data=requested_range_dataframe, hue="Positve/Negative", palette=colours)
+    sns.barplot(x="Shortend Date", y="% daily change", data=requested_range_dataframe, hue="Positive/Negative", palette=colours)
 
-    plt.title(f"{ticker} - Daily Percentage Change (Last {days_range} days)")
+    plt.title(f"{ticker} - Daily Percentage Change (Last {days_range} Days)")
     plt.xlabel("Date")
     plt.ylabel("% change")
     plt.xticks(rotation=45)
@@ -258,7 +258,7 @@ def daily_percentage_change(ticker, days_range, requested_range_dataframe):
     plt.tight_layout()
     plt.show()
 
-def volume_over_time(ticker, days_range, requested_range_dataframe):
+def generate_volume_over_time_chart(ticker, days_range, requested_range_dataframe):
     requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
 
     # print(requested_range_dataframe)
@@ -271,11 +271,11 @@ def volume_over_time(ticker, days_range, requested_range_dataframe):
 
     sns.barplot(x="Shortend Date", y="Volume", data=requested_range_dataframe, color="#3498db")
 
-    plt.title(f"{ticker} - Daily Trading Volume (Last {days_range} days)")
+    plt.title(f"{ticker} - Daily Trading Volume (Last {days_range} Days)")
     plt.xlabel("Date")
     plt.ylabel("Volume")
     plt.xticks(rotation=45)
-    
+
     # Format y-axis in millions for readability
     ax = plt.gca()
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{int(x/1e6)}M'))
@@ -283,11 +283,11 @@ def volume_over_time(ticker, days_range, requested_range_dataframe):
     plt.tight_layout()
     plt.show()
 
-def closing_price_vs_moving_average(ticker, days_range, requested_range_dataframe):
+def generate_closing_price_vs_moving_average_chart(ticker, days_range, requested_range_dataframe):
     requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
     requested_range_dataframe["5D MA"] = requested_range_dataframe["Close"].rolling(window=5).mean()
 
-    print(requested_range_dataframe)
+    # print(requested_range_dataframe)
 
     fig = plt.figure(figsize=(8, 5))
     fig.canvas.manager.set_window_title(f"{ticker} - Closing Price vs Moving Average")
@@ -298,15 +298,72 @@ def closing_price_vs_moving_average(ticker, days_range, requested_range_datafram
     sns.lineplot(x="Shortend Date", y="Close", data=requested_range_dataframe, label="Closing Price", color="#2980b9")
     sns.lineplot(x="Shortend Date", y="5D MA", data=requested_range_dataframe, label="5-Day MA", color="#f39c12")
 
-    plt.title(f"{ticker} - Closing Price with 5-Day Moving Average (Last {days_range} days)")
+    plt.title(f"{ticker} - Closing Price with 5-Day Moving Average (Last {days_range} Days)")
     plt.xlabel("Date")
-    plt.ylabel("Price ($)")
+    plt.ylabel("Price")
     plt.xticks(rotation=45)
     plt.legend()
+
+    ax = plt.gca()
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
+    plt.xlim(requested_range_dataframe["Shortend Date"].iloc[0], requested_range_dataframe["Shortend Date"].iloc[-1])
 
     plt.tight_layout()
     plt.show()
 
+def generate_high_low_range_chart(ticker, days_range, requested_range_dataframe):
+    requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
+    requested_range_dataframe["High-Low Range"] = (requested_range_dataframe["High"] - requested_range_dataframe["Low"])
+
+    # print(requested_range_dataframe)
+
+    fig = plt.figure(figsize=(8, 5))
+    fig.canvas.manager.set_window_title(f"{ticker} - Daily High-Low Range")
+
+    sns.set_style("whitegrid")
+    sns.set_context("notebook")
+
+    plt.fill_between(requested_range_dataframe["Shortend Date"], requested_range_dataframe["High-Low Range"], color="#3498db", alpha=0.4, edgecolor="#2980b9")
+
+    plt.title(f"{ticker} - Daily High-Low Range (Last {days_range} Days)")
+    plt.xlabel("Date")
+    plt.ylabel("Price Range")
+    plt.xticks(rotation=45)
+
+    plt.xlim(requested_range_dataframe["Shortend Date"].iloc[0], requested_range_dataframe["Shortend Date"].iloc[-1])
+    plt.ylim(bottom=0)
+    ax = plt.gca()
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
+
+    plt.tight_layout()
+    plt.show()
+
+def generate_cumulative_returns_chart(ticker, days_range, requested_range_dataframe, investment_amount):
+    requested_range_dataframe["% daily change"] = requested_range_dataframe["Close"].pct_change() * 100
+    requested_range_dataframe = requested_range_dataframe.dropna(subset=["% daily change"]).copy()  
+    requested_range_dataframe["Cumulative Returns"] = investment_amount * ((1 + requested_range_dataframe["% daily change"] / 100).cumprod())
+    requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
+
+    fig = plt.figure(figsize=(8, 5))
+    fig.canvas.manager.set_window_title(f"{ticker} - Cumulative Returns")
+
+    sns.set_style("whitegrid")
+    sns.set_context("notebook")
+
+    sns.lineplot(x="Shortend Date", y="Cumulative Returns", data=requested_range_dataframe, color="#e67e22", linewidth=2)
+
+    plt.title(f"{ticker} - Cumulative Returns (Last {days_range} Days)")
+    plt.xlabel("Date")
+    plt.ylabel(f"Value of ${investment_amount:,} Invested")
+    plt.xticks(rotation=45)
+
+    plt.xlim(requested_range_dataframe["Shortend Date"].iloc[0], requested_range_dataframe["Shortend Date"].iloc[-1])
+    plt.ylim(bottom=investment_amount)
+    ax = plt.gca()
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
+
+    plt.tight_layout()
+    plt.show()
 
 def save_to_csv(dataframe, filename):
     dataframe.to_csv(filename, index=False)
