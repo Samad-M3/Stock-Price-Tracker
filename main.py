@@ -1,10 +1,12 @@
 import yfinance as yf
 import pandas as pd
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, time
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from zoneinfo import ZoneInfo
+import pandas_market_calendars as mcal
 
 COLUMN_NAMES = ["Date", "Open", "High", "Low", "Close", "Volume", "Ticker"]
 INTERVAL_TO_TIMEDIFF = {
@@ -365,6 +367,46 @@ def generate_cumulative_returns_chart(ticker, days_range, requested_range_datafr
     plt.tight_layout()
     plt.show()
 
+def percentage_change_alert(list_of_ticker, alert_threshold):
+    today = datetime.now().date()
+    nyse = mcal.get_calendar("NYSE")
+    trading_schedule = nyse.schedule(start_date=today, end_date=today)
+
+    utc_time = datetime.now(tz=ZoneInfo("UTC"))
+    eastern_time = utc_time.astimezone(ZoneInfo("America/New_York")).time()
+    market_close_time = time(hour=16, minute=0, second=0)
+
+    results = {}
+
+    if today in trading_schedule.index.date and eastern_time >= market_close_time:
+        for ticker in list_of_ticker:
+            ticker_object = yf.Ticker(ticker)
+            history =  ticker_object.history(period="2d")
+
+            if len(history) < 2:
+                print(f"Not enough data for {ticker}")
+                continue
+
+            last_close = history["Close"].iloc[-1]
+            prev_close = history["Close"].iloc[-2]
+
+            percentage_change = ((last_close - prev_close) / prev_close) * 100
+            
+            results[ticker] = percentage_change
+
+            if percentage_change > alert_threshold:
+                print(f"ALERT: {ticker} rose {percentage_change:+.2f}% today!")
+            elif percentage_change < -alert_threshold:
+                print(f"ALERT: {ticker} dropped {percentage_change:+.2f}% today!")
+            else:
+                print(f"{ticker}: Does not meet threshold requirement")
+    elif today not in trading_schedule.index.date:
+        print("Weekend/Holiday, stock market isn't open")
+    else:
+        print("Market open still, can't calculate pecentage change yet")
+
+    return results
+
 def save_to_csv(dataframe, filename):
     dataframe.to_csv(filename, index=False)
 
@@ -404,7 +446,7 @@ Testing for historical data
 # fetch_historical_data(["AAPL"], "2025-08-01", "2025-09-01", "1d")
 # fetch_historical_data(["MSFT", "AAPL"], "2025-08-24", "2025-09-08", "1d")
 # fetch_historical_data(["AAPL"], "2025-08-13", "2025-09-13", "1d")
-# fetch_historical_data(["AAPL"], "2025-07-01", "2025-08-01", "1d")
+# fetch_historical_data(["AAPL"], "2025-08-28", "2025-09-15", "1d")
 
 """
 Testing for live prices
@@ -419,4 +461,9 @@ Testing for data analysis
 """
 Testing for visualisation
 """
-visualise_stock_data("AAPL", 30)
+# visualise_stock_data("AAPL", 30)
+
+"""
+Testing for alerts
+"""
+percentage_change_alert(["AAPL", "MSFT", "TSLA", "VODL.XC"], 0.5)
