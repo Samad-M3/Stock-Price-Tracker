@@ -1,12 +1,16 @@
 import yfinance as yf
 import pandas as pd
-from pathlib import Path
-from datetime import datetime, time
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-from zoneinfo import ZoneInfo
 import pandas_market_calendars as mcal
+import os
+import smtplib
+from email.message import EmailMessage
+from pathlib import Path
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
+
 
 COLUMN_NAMES = ["Date", "Open", "High", "Low", "Close", "Volume", "Ticker"]
 INTERVAL_TO_TIMEDIFF = {
@@ -374,9 +378,12 @@ def percentage_change_alert(list_of_ticker, alert_threshold):
 
     utc_time = datetime.now(tz=ZoneInfo("UTC"))
     eastern_time = utc_time.astimezone(ZoneInfo("America/New_York")).time()
+    market_open_time = time(hour=9, minute=30, second=0)
     market_close_time = time(hour=16, minute=0, second=0)
 
-    results = {}
+    # eastern_time = time(hour=19, minute=0, second=0)
+
+    strings = []
 
     if today in trading_schedule.index.date and eastern_time >= market_close_time:
         for ticker in list_of_ticker:
@@ -391,21 +398,52 @@ def percentage_change_alert(list_of_ticker, alert_threshold):
             prev_close = history["Close"].iloc[-2]
 
             percentage_change = ((last_close - prev_close) / prev_close) * 100
-            
-            results[ticker] = percentage_change
 
             if percentage_change > alert_threshold:
-                print(f"ALERT: {ticker} rose {percentage_change:+.2f}% today!")
+                string = f"ALERT: {ticker} rose {percentage_change:+.2f}% today!"
+                strings.append(string)
+                print(string)
             elif percentage_change < -alert_threshold:
-                print(f"ALERT: {ticker} dropped {percentage_change:+.2f}% today!")
+                string = f"ALERT: {ticker} dropped {percentage_change:+.2f}% today!"
+                strings.append(string)
+                print(string)
             else:
-                print(f"{ticker}: Does not meet threshold requirement")
-    elif today not in trading_schedule.index.date:
-        print("Weekend/Holiday, stock market isn't open")
-    else:
-        print("Market open still, can't calculate pecentage change yet")
+                string = f"{ticker}: Does not meet threshold requirement."
+                strings.append(string)
+                print(string)        
 
-    return results
+        body = f"Daily Stock Alerts:\n\n{'\n'.join(strings)}"
+    elif today not in trading_schedule.index.date:
+        string = "Market closed today (holiday/weekend)."
+        body = string
+        print(string)
+    elif eastern_time < market_open_time:
+        string = "Market not open yet — waiting for open."
+        body = string
+        print(string)
+    elif market_open_time <= eastern_time < market_close_time:
+        string = "Market is open — wait until close for daily % change."
+        body = string
+        print(string)
+
+    subject = f"Stock Market Update - {today.strftime('%d %b %Y')}"
+    to = "abdussamadmohit1@gmail.com"
+    email_alerts(subject, to, body)
+
+def email_alerts(subject, to, body):
+    EMAIL_ADDRESS = os.environ.get("EMAIL_USER")
+    EMAIL_PASSWORD = os.environ.get("EMAIL_PASS")
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = EMAIL_ADDRESS
+    msg["To"] = to
+    msg.set_content(body)
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+
+        smtp.send_message(msg)
 
 def save_to_csv(dataframe, filename):
     dataframe.to_csv(filename, index=False)
@@ -467,3 +505,8 @@ Testing for visualisation
 Testing for alerts
 """
 percentage_change_alert(["AAPL", "MSFT", "TSLA", "VODL.XC"], 0.5)
+
+"""
+Testing for email alerts
+"""
+# email_alerts("Testing", "abdussamadmohit1@gmail.com", "This is working!")
