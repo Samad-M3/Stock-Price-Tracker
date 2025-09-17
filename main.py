@@ -29,6 +29,16 @@ INTERVAL_TO_TIMEDIFF = {
     "3mo": pd.Timedelta(days=90)
 }
 
+def menu():
+    while True:
+        print("🏦 Welcome to the Stock Price Tracker!")
+        option = int(input(f"\n1. Fetch Historical Data \n2. Fetch Live Price \n3. Analyse Stock Data \n4. Visualise Stock Data \n5. Set Percentage Change Alert \n6. Exit Program \n\nChoose an option: "))
+
+def sub_menu():
+    while True:
+        print("📊 Chart Options:")
+        option = int(input(f"\n1. View daily percentage change \n2. View volume over time \n3. Compare closing price vs moving average \n4. View daily high-low range \n5. View cumulative returns \n6. Go back to main menu \n\nChoose an option: "))
+
 def fetch_historical_data(list_of_tickers, start, end, interval):
     start = pd.to_datetime(start).tz_localize("America/New_York")
     end = pd.to_datetime(end).tz_localize("America/New_York")
@@ -509,9 +519,13 @@ Testing for visualisation
 """
 Testing for alerts
 """
-percentage_change_alert(["AAPL", "MSFT", "TSLA", "VODL.XC"], 0.5)
+# percentage_change_alert(["AAPL", "MSFT", "TSLA", "VODL.XC"], 0.5)
 
 """
 Testing for email alerts
 """
 # email_alerts("Testing", "abdussamadmohit1@gmail.com", "This is working!")
+
+menu()
+
+# sub_menu()
