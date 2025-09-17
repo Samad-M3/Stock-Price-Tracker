@@ -4,6 +4,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import pandas_market_calendars as mcal
+import sys
 import os
 import smtplib
 from email.message import EmailMessage
@@ -444,6 +445,10 @@ def email_alerts(subject, to, body):
         smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
 
         smtp.send_message(msg)
+
+def exit_program():
+    print("Closing program...")
+    sys.exit(0)
 
 def save_to_csv(dataframe, filename):
     dataframe.to_csv(filename, index=False)
