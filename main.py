@@ -31,13 +31,70 @@ INTERVAL_TO_TIMEDIFF = {
 
 def menu():
     while True:
-        print("🏦 Welcome to the Stock Price Tracker!")
+        print(f"\n🏦 Welcome to the Stock Price Tracker!")
         option = int(input(f"\n1. Fetch Historical Data \n2. Fetch Live Price \n3. Analyse Stock Data \n4. Visualise Stock Data \n5. Set Percentage Change Alert \n6. Exit Program \n\nChoose an option: "))
+
+        if option == 1:
+            list_of_tickers = []
+            while True:
+                ticker = input(f"\nEnter a ticker: ")
+                list_of_tickers.append(ticker)
+                add_another_ticker = input(f"Would you like to enter another ticker (Yes/No)? ").strip().capitalize()
+                if add_another_ticker == "Yes":
+                    pass
+                elif add_another_ticker == "No":
+                    break
+
+            start_date = input(f"\nEnter a start date (inclusive): ")
+            end_date = input(f"\nEnter an end date (exclusive): ")
+
+            print(f"\nValid intervals:")
+            for key in INTERVAL_TO_TIMEDIFF:
+                print(key, end=", ")
+            interval = input(f"\n\nEnter an interval: ")
+
+            fetch_historical_data(list_of_tickers, start_date, end_date, interval)
+        elif option == 2:
+            list_of_tickers = []
+            while True:
+                ticker = input(f"\nEnter a ticker: ")
+                list_of_tickers.append(ticker)
+                add_another_ticker = input(f"Would you like to enter another ticker (Yes/No)? ").strip().capitalize()
+                if add_another_ticker == "Yes":
+                    pass
+                elif add_another_ticker == "No":
+                    break
+
+            fetch_live_price(list_of_tickers)
+        elif option == 3:
+            ticker = input(f"\nEnter a ticker: ")
+            days_back = int(input(f"Enter how far you would like to go back (measured in days): "))
+
+            analyse_stock_data(ticker, days_back)
+        elif option == 4:
+            sub_menu()
+        elif option == 5:
+            percentage_change_alert(["AAPL", "MSFT", "TSLA", "VODL.XC"], 0.5)
+        elif option == 6:
+            exit_program()
 
 def sub_menu():
     while True:
-        print("📊 Chart Options:")
-        option = int(input(f"\n1. View daily percentage change \n2. View volume over time \n3. Compare closing price vs moving average \n4. View daily high-low range \n5. View cumulative returns \n6. Go back to main menu \n\nChoose an option: "))
+        print(f"\n📊 Chart Options:")
+        option = int(input(f"\n1. View daily percentage change \n2. View volume over time \n3. Compare closing price vs moving average \n4. View daily high-low range \n5. View cumulative returns \n6. Go back to main menu \n\nChoose an option: "))    
+        
+        if option == 1:
+            pass
+        elif option == 2:
+            pass
+        elif option == 3:
+            pass
+        elif option == 4:
+            pass
+        elif option == 5:
+            pass
+        elif option == 6:
+            break
 
 def fetch_historical_data(list_of_tickers, start, end, interval):
     start = pd.to_datetime(start).tz_localize("America/New_York")
@@ -167,8 +224,9 @@ def fetch_historical_data(list_of_tickers, start, end, interval):
         compiled_history.sort_values(by=["Ticker", "Date"], inplace=True)
         save_to_csv(compiled_history, filename)
 
-def fetch_live_price(tickers):
-    for ticker in tickers:
+def fetch_live_price(list_of_tickers):
+    print() # Readability purposes
+    for ticker in list_of_tickers:
         current_ticker = yf.Ticker(ticker)
         print(f"{ticker} current price = ${current_ticker.fast_info['lastPrice']:.2f}")
 
@@ -218,7 +276,6 @@ def analyse_stock_data(ticker, days_range):
         avg_closing = requested_range_dataframe["Close"].mean()
         avg_volume = round(requested_range_dataframe["Volume"].mean())
         range_percentage_change = ((new_close - first_close) / first_close) * 100
-        requested_range_dataframe["5D MA"] = requested_range_dataframe["Close"].rolling(window=5).mean()
 
         """
         Printing out the stats
@@ -494,7 +551,7 @@ def get_internal_missing_ranges(dataframe, start, end, interval):
 """
 Testing for historical data
 """
-# fetch_historical_data(["AAPL"], "2025-08-12", "2025-08-18", "1d")
+# fetch_historical_data(["TSLA"], "2025-08-01", "2025-09-01", "1d")
 # fetch_historical_data(["AAPL"], "2025-08-01", "2025-09-01", "1d")
 # fetch_historical_data(["AAPL"], "2025-08-01", "2025-09-01", "1d")
 # fetch_historical_data(["MSFT", "AAPL"], "2025-08-24", "2025-09-08", "1d")
