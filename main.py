@@ -53,7 +53,7 @@ def menu():
                 print(key, end=", ")
             interval = input(f"\n\nEnter an interval: ")
 
-            fetch_historical_data(list_of_tickers, start_date, end_date, interval)
+            fetch_historical_data(list_of_tickers, start_date, end_date, interval, verbose=True)
         elif option == 2:
             list_of_tickers = []
             while True:
@@ -96,13 +96,30 @@ def sub_menu():
         elif option == 6:
             break
 
-def fetch_historical_data(list_of_tickers, start, end, interval):
-    start = pd.to_datetime(start).tz_localize("America/New_York")
-    end = pd.to_datetime(end).tz_localize("America/New_York")
+def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
+    # Convert string to datetime (defaults to naive/no timezone)
+    start = pd.to_datetime(start)
+    # If naive (no timezone), attach New York timezone
+    # If already tz-aware, convert it to New York timezone
+    if start.tzinfo is None:
+        start = start.tz_localize("America/New_York")
+    else:
+        start = start.tz_convert("America/New_York")
+    
+    # Repeat for end date
+    end = pd.to_datetime(end)
+    # Localize if naive, convert if already tz-aware
+    if end.tzinfo is None:
+        end = end.tz_localize("America/New_York")
+    else:
+        end = end.tz_convert("America/New_York")
+
     filename = get_filename(interval)
 
     if Path(filename).exists():
+        # Load CSV and ensure data is ordered by Ticker (grouped) and Date (chronological)
         compiled_history = load_from_csv(filename).sort_values(by=["Ticker", "Date"])
+
         present_tickers = []
         missing_tickers = []
         fully_checked_tickers = []
@@ -114,7 +131,8 @@ def fetch_historical_data(list_of_tickers, start, end, interval):
                 missing_tickers.append(ticker)
 
         for ticker in present_tickers:
-            ticker_specific_dataframe = compiled_history[compiled_history["Ticker"] == ticker] # Returns a dataframe for just that ticker
+            # Returns a dataframe for just that ticker
+            ticker_specific_dataframe = compiled_history[compiled_history["Ticker"] == ticker]
 
             internal_gaps = get_internal_missing_ranges(ticker_specific_dataframe, start, end, interval)
             ticker_object = yf.Ticker(ticker)
@@ -122,42 +140,46 @@ def fetch_historical_data(list_of_tickers, start, end, interval):
                 history = ticker_object.history(start=gap_start, end=gap_end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
                 history["Ticker"] = ticker
 
+                # For intraday intervals Yahoo returns "Datetime" instead of "Date" → normalise column name
                 if "Datetime" in history.columns:
                         history = history.rename(columns={"Datetime": "Date"})
 
+                # Skip if no data returned (e.g. weekends/holidays), else append new rows to compiled_history
                 if history.empty:
                         pass
                 else:
                     compiled_history = pd.concat([compiled_history, history], ignore_index=True)
 
-            """
-            Check to see if the shortest date in the dataframe is earlier than or equal to the start date
-            Check to see if the longest date in the dateframe is later than or equal to the end date
-            """
+            # Check to see if the shortest date in the dataframe is earlier than or equal to the start date
+            # Check to see if the longest date in the dateframe is later than or equal to the end date
             if start >= ticker_specific_dataframe["Date"].min() and end <= ticker_specific_dataframe["Date"].max():
                 pass
             else:
-                if start < ticker_specific_dataframe["Date"].min():
+                if start < ticker_specific_dataframe["Date"].min() < end:
                     ticker_object = yf.Ticker(ticker)
                     history = ticker_object.history(start=start, end=ticker_specific_dataframe["Date"].min(), interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
                     history["Ticker"] = ticker
 
+                    # For intraday intervals Yahoo returns "Datetime" instead of "Date" → normalise column name
                     if "Datetime" in history.columns:
                         history = history.rename(columns={"Datetime": "Date"})
 
+                    # Skip if no data returned (e.g. weekends/holidays), else append new rows to compiled_history
                     if history.empty:
                         pass
                     else:
                         compiled_history = pd.concat([compiled_history, history], ignore_index=True)
 
-                if end > ticker_specific_dataframe["Date"].max():
+                if end > ticker_specific_dataframe["Date"].max() > start:
                     ticker_object = yf.Ticker(ticker)
                     history = ticker_object.history(start=ticker_specific_dataframe["Date"].max(), end=end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
                     history["Ticker"] = ticker
 
+                    # For intraday intervals Yahoo returns "Datetime" instead of "Date" → normalise column name
                     if "Datetime" in history.columns:
                         history = history.rename(columns={"Datetime": "Date"})
 
+                    # Skip if no data returned (e.g. weekends/holidays), else append new rows to compiled_history
                     if history.empty:
                         pass
                     else:
@@ -170,34 +192,42 @@ def fetch_historical_data(list_of_tickers, start, end, interval):
             history = ticker_object.history(start=start, end=end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
             history["Ticker"] = ticker
 
+            # For intraday intervals Yahoo returns "Datetime" instead of "Date" → normalise column name
             if "Datetime" in history.columns:
-                history = history.rename(columns={"Datetime": "Date"})
+                history = history.rename(columns={"Datetime": "Date"})     
 
-            compiled_history = pd.concat([compiled_history, history], ignore_index=True)
+            # Skip if no data returned (e.g. weekends/holidays), else append new rows to compiled_history
+            if history.empty:
+                pass
+            else:
+                compiled_history = pd.concat([compiled_history, history], ignore_index=True)       
+
             fully_checked_tickers.append(ticker)   
       
+        # Remove duplicate rows based on Date and Ticker, then sort by Ticker and Date
+        # inplace=True updates compiled_history directly without creating a new DataFrame
         compiled_history.drop_duplicates(subset=["Date", "Ticker"], inplace=True)
         compiled_history.sort_values(by=["Ticker", "Date"], inplace=True)
-        save_to_csv(compiled_history, filename)    
-        
-        combined_resulting_dataframe = pd.DataFrame(columns=COLUMN_NAMES) # Creating an empty dataframe so each tickers filtered data can be appeneded on and representred as one big dataframe
-        # Forces each column into the correct data type
-        combined_resulting_dataframe = combined_resulting_dataframe.astype({
-            "Date": "datetime64[ns]",
-            "Open": "float64",
-            "High": "float64",
-            "Low": "float64",
-            "Close": "float64",
-            "Volume": "int64",
-            "Ticker": "string"
-        })
+        save_to_csv(compiled_history, filename)
 
-        for ticker in fully_checked_tickers:
-            combined_resulting_dataframe = pd.concat([combined_resulting_dataframe, compiled_history[(compiled_history["Ticker"] == ticker) & (compiled_history["Date"] >= start) & (compiled_history["Date"] <= end)]])
+        if verbose:
+            combined_resulting_dataframe = pd.DataFrame(columns=COLUMN_NAMES) # Creating an empty dataframe so each tickers filtered data can be appeneded on and representred as one big dataframe
+            # Forces each column into the correct data type
+            combined_resulting_dataframe = combined_resulting_dataframe.astype({
+                "Date": "datetime64[ns]",
+                "Open": "float64",
+                "High": "float64",
+                "Low": "float64",
+                "Close": "float64",
+                "Volume": "int64",
+                "Ticker": "string"
+            })
 
-        print(combined_resulting_dataframe.to_string())
+            for ticker in fully_checked_tickers:
+                combined_resulting_dataframe = pd.concat([combined_resulting_dataframe, compiled_history[(compiled_history["Ticker"] == ticker) & (compiled_history["Date"] >= start) & (compiled_history["Date"] <= end)]])
+
+            print(combined_resulting_dataframe.to_string())
     else:
-        print("Fetching data from API...")
         compiled_history = pd.DataFrame(columns=COLUMN_NAMES)
         # Forces each column into the correct data type
         compiled_history = compiled_history.astype({
@@ -215,14 +245,22 @@ def fetch_historical_data(list_of_tickers, start, end, interval):
             history = ticker_object.history(start=start, end=end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
             history["Ticker"] = ticker
 
+            # For intraday intervals Yahoo returns "Datetime" instead of "Date" → normalise column name
             if "Datetime" in history.columns:
                 history = history.rename(columns={"Datetime": "Date"})
 
-            compiled_history = pd.concat([compiled_history, history], ignore_index=True)
+            # Skip if no data returned (e.g. weekends/holidays), else append new rows to compiled_history
+            if history.empty:
+                pass
+            else:
+                compiled_history = pd.concat([compiled_history, history], ignore_index=True)
         
-        print(compiled_history.to_string())
+        compiled_history.drop_duplicates(subset=["Date", "Ticker"], inplace=True)
         compiled_history.sort_values(by=["Ticker", "Date"], inplace=True)
         save_to_csv(compiled_history, filename)
+
+        if verbose:
+            print(compiled_history.to_string())
 
 def fetch_live_price(list_of_tickers):
     print() # Readability purposes
@@ -523,6 +561,7 @@ def save_to_csv(dataframe, filename):
 def load_from_csv(filename):
     if Path(filename).exists():
         df = pd.read_csv(filename)
+        # Parse "Date" column as timezone-aware UTC datetimes, then convert to NY time
         df["Date"] = pd.to_datetime(df["Date"], utc=True).dt.tz_convert("America/New_York")
         return df
     else:
@@ -535,16 +574,18 @@ def get_internal_missing_ranges(dataframe, start, end, interval):
     requested_range_dataframe  = dataframe[(dataframe["Date"] >= start) & (dataframe["Date"] <= end)].sort_values(by="Date")
     gaps = []
 
-    # Case 1: nothing in range → entire range is a gap
+    # Case 1: no rows in requested range → the entire range is a gap
     if requested_range_dataframe.empty:
         return [(start, end)]
     
-    # Case 2: check between existing rows
+    # Case 2: check for gaps between existing rows
     for i in range(len(requested_range_dataframe) - 1):
-        current_date = requested_range_dataframe.iloc[i]["Date"]
-        next_date = requested_range_dataframe.iloc[i+1]["Date"]
-        if next_date > current_date + pd.Timedelta(INTERVAL_TO_TIMEDIFF[interval]):
-            gaps.append((current_date + pd.Timedelta(INTERVAL_TO_TIMEDIFF[interval]), next_date))
+        current_date = requested_range_dataframe["Date"].iloc[i]
+        next_date = requested_range_dataframe["Date"].iloc[i+1]
+
+        if next_date > current_date + INTERVAL_TO_TIMEDIFF[interval]:
+            # Gap starts just after current_date, and ends at next_date
+            gaps.append((current_date + INTERVAL_TO_TIMEDIFF[interval], next_date))
 
     return gaps
 
