@@ -36,6 +36,7 @@ def menu():
 
         if option == 1:
             list_of_tickers = []
+
             while True:
                 ticker = input(f"\nEnter a ticker: ")
                 list_of_tickers.append(ticker)
@@ -56,6 +57,7 @@ def menu():
             fetch_historical_data(list_of_tickers, start_date, end_date, interval, verbose=True)
         elif option == 2:
             list_of_tickers = []
+
             while True:
                 ticker = input(f"\nEnter a ticker: ")
                 list_of_tickers.append(ticker)
@@ -226,6 +228,7 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
             for ticker in fully_checked_tickers:
                 combined_resulting_dataframe = pd.concat([combined_resulting_dataframe, compiled_history[(compiled_history["Ticker"] == ticker) & (compiled_history["Date"] >= start) & (compiled_history["Date"] <= end)]])
 
+            print() # Readability purposes
             print(combined_resulting_dataframe.to_string())
     else:
         compiled_history = pd.DataFrame(columns=COLUMN_NAMES)
@@ -263,7 +266,7 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
             print(compiled_history.to_string())
 
 def fetch_live_price(list_of_tickers):
-    print() # Readability purposes
+    print(f"\nLive Prices of Tickers:\n")
     for ticker in list_of_tickers:
         current_ticker = yf.Ticker(ticker)
         print(f"{ticker} current price = ${current_ticker.fast_info['lastPrice']:.2f}")
@@ -274,61 +277,194 @@ def analyse_stock_data(ticker, days_range):
     if ticker in compiled_history["Ticker"].values:
         ticker_specific_dataframe = compiled_history[compiled_history["Ticker"] == ticker]
 
-        ticker_object = yf.Ticker(ticker)
-        history = ticker_object.history(period="100d").reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
-        most_recent_trading_day = history["Date"].iloc[-1]
-        start_trading_day = history["Date"].iloc[-days_range]
+        today = datetime.now().date()
+        # Forcing the date
+        # today = datetime(2025, 9, 21).date()
+        nyse = mcal.get_calendar("NYSE")
+        trading_schedule = nyse.schedule(start_date=today, end_date=today)
 
-        if ticker_specific_dataframe["Date"].max() < most_recent_trading_day:
-            print("Max date is less than most recent trading day")
-            fetch_historical_data([ticker], start_trading_day.strftime('%Y-%m-%d'), (most_recent_trading_day + pd.Timedelta(days=1)).strftime('%Y-%m-%d'), "1d")
-        elif ticker_specific_dataframe["Date"].max() == most_recent_trading_day:
-            print("Max date is equal to the most recent trading day")
+        utc_time = datetime.now(tz=ZoneInfo("UTC"))
+        eastern_time = utc_time.astimezone(ZoneInfo("America/New_York")).time()
+        market_close_time = time(hour=16, minute=0, second=0)
 
-            valid_days = ticker_object.history(period=f"{days_range}d").reset_index()["Date"]
-            actual_days = ticker_specific_dataframe.sort_values("Date").tail(days_range)["Date"]
+        # Forcing the ET time
+        # eastern_time = time(hour=19, minute=0, second=0)
 
-            if set(valid_days) == set(actual_days):
+        # Today is a trading day and the market has closed for today
+        if today in trading_schedule.index.date and eastern_time >= market_close_time:
+            list_of_valid_trading_days = []
+            list_of_actual_trading_days = []
+
+            # Get all valid trading days up to and including today if it's a trading day
+            # NOTE: valid_trading_days only goes back 90 days (adjust if longer lookback is needed)
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=90), end_date=today)
+
+            # Append the last N trading days starting from the most recent (working backwards)
+            for i in range(days_range):
+                list_of_valid_trading_days.append(valid_trading_days[-1 - i].date())
+                # print(valid_trading_days[-1 - i].date())
+
+            # Collect the last N dates actually present in the CSV for this ticker (most recent first)
+            for i in range(days_range):
+                day = pd.to_datetime(ticker_specific_dataframe["Date"].iloc[-1 - i]).date()
+                list_of_actual_trading_days.append(day)
+
+            # Check if the last N valid trading days match exactly the last N dates in the CSV
+            if list_of_valid_trading_days == list_of_actual_trading_days:
+                print("Data matches, can use straight away")
                 pass
             else:
-                fetch_historical_data([ticker], start_trading_day.strftime('%Y-%m-%d'), (most_recent_trading_day + pd.Timedelta(days=1)).strftime('%Y-%m-%d'), "1d")
+                print("Data needs to be fetched")
+                # Fetch historical data for this ticker because the CSV is missing some dates
+                # Start date:
+                #   - list_of_valid_trading_days[-1] gives the oldest date in our last N valid trading days
+                #   - valid trading days are stored in reverse chronological order (most recent first)
+                # End date:
+                #   - fetch_historical_data treats start date as inclusive, end date as exclusive
+                #   - today + pd.Timedelta(days=1) ensures that today’s row (most recent trading day) is included in the fetch
+                fetch_historical_data([ticker], list_of_valid_trading_days[-1].strftime("%Y-%m-%d"), (today + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
+
+        # Today is a trading day and the market is still open or waiting to open
+        elif today in trading_schedule.index.date and eastern_time < market_close_time:
+            list_of_valid_trading_days = []
+            list_of_actual_trading_days = []
+
+            # Get all valid trading days up to yesterday
+            # Exclude today because the market is still open; the last valid trading day is yesterday
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=90), end_date=(today - pd.Timedelta(days=1)))
+
+            # Append the last N trading days starting from the most recent (working backwards)
+            # Because we have excluded today from valid_trading_days, valid_trading_days[-1] would be yesterday
+            for i in range(days_range):
+                list_of_valid_trading_days.append(valid_trading_days[-1 - i].date())
+                # print(valid_trading_days[-1 - i].date())
+                # print()
+
+            # Collect the last N dates actually present in the CSV for this ticker (most recent first)
+            for i in range(days_range):
+                day = pd.to_datetime(ticker_specific_dataframe["Date"].iloc[-1 - i]).date()
+                list_of_actual_trading_days.append(day)
+                # print(day)
+
+            # Check if the last N valid trading days match exactly the last N dates in the CSV
+            if list_of_valid_trading_days == list_of_actual_trading_days:
+                print("Data matches, can use straight away")
+                pass
+            else:
+                print("Data needs to be fetched")
+                # Fetch historical data for this ticker because the CSV is missing some dates
+                # Start date:
+                #   - list_of_valid_trading_days[-1] gives the oldest date in our last N valid trading days
+                # End date:
+                #   - fetch_historical_data treats start date as inclusive, end date as exclusive
+                #   - valid_trading_days ends at yesterday since the market is still open 
+                #   - using today as the end date ensures yesterday’s data is included, while today itself is excluded
+                fetch_historical_data([ticker], list_of_valid_trading_days[-1].strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), "1d")
+
+        # Today is not a trading day (weekend/holiday)
         else:
-            pass
+            list_of_valid_trading_days = []
+            list_of_actual_trading_days = []
 
-        """
-        Rough Workings
-        """
-        compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
+            # Get all valid trading days up to today
+            # If today is not a trading day, valid_trading_days[-1] gives the most recent trading day before today
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=90), end_date=today)
+            most_recent_trading_day = valid_trading_days[-1].date()
+            # print(most_recent_trading_day)
 
-        requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
-        # print(requested_range_dataframe)
+            # Append the last N trading days starting from the most recent (working backwards)
+            for i in range(days_range):
+                list_of_valid_trading_days.append(valid_trading_days[-1 - i].date())
+                # print(valid_trading_days[-1 - i].date())
 
-        new_close = requested_range_dataframe["Close"].iloc[-1]
-        old_close = requested_range_dataframe["Close"].iloc[-2]
+            # Collect the last N dates actually present in the CSV for this ticker (most recent first)
+            for i in range(days_range):
+                day = pd.to_datetime(ticker_specific_dataframe["Date"].iloc[-1 - i]).date()
+                list_of_actual_trading_days.append(day)
 
-        first_close = requested_range_dataframe["Close"].iloc[0]
-
-        daily_percentage_change = ((new_close - old_close) / old_close) * 100 
-        highest_high = requested_range_dataframe["High"].max()
-        lowest_low = requested_range_dataframe["Low"].min()
-        avg_closing = requested_range_dataframe["Close"].mean()
-        avg_volume = round(requested_range_dataframe["Volume"].mean())
-        range_percentage_change = ((new_close - first_close) / first_close) * 100
-
-        """
-        Printing out the stats
-        """
-
-        print(f"\n{ticker} Stock Analysis (Past {days_range} days)")
-
-        print(f"\nToday's % Change: {daily_percentage_change:+.2f}%")
-        print(f"Range High: ${highest_high:.2f}")
-        print(f"Range Low: ${lowest_low:.2f}")
-        print(f"Average Closing Price: ${avg_closing:.2f}")
-        print(f"Average Volume: {avg_volume:,} shares")
-        print(f"% Change Over Range: {range_percentage_change:+.2f}%\n")
+            # Check if the last N valid trading days match exactly the last N dates in the CSV
+            if list_of_valid_trading_days == list_of_actual_trading_days:
+                print("Data matches, can use straight away")
+                pass
+            else:
+                # Fetch historical data for this ticker because the CSV is missing some dates
+                # Start date:
+                #   - list_of_valid_trading_days[-1] gives the oldest date in our last N valid trading days
+                # End date: most recent trading day (e.g., Friday if today is Sunday) + 1 day
+                #   - +1 ensures the most recent trading day is included because start is inclusive and end is exclusive
+                print("Data needs to be fetched")
+                fetch_historical_data([ticker], list_of_valid_trading_days[-1].strftime("%Y-%m-%d"), (most_recent_trading_day + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
     else:
         print(f"{ticker} does not exist in the dataframe")
+
+        today = datetime.now().date()
+        nyse = mcal.get_calendar("NYSE")
+        trading_schedule = nyse.schedule(start_date=today, end_date=today)
+
+        utc_time = datetime.now(tz=ZoneInfo("UTC"))
+        eastern_time = utc_time.astimezone(ZoneInfo("America/New_York")).time()
+        market_close_time = time(hour=16, minute=0, second=0)
+        
+        # Today is a trading day and the market has closed for today
+        if today in trading_schedule.index.date and eastern_time >= market_close_time:
+            # Get all valid trading days up to and including today if it's a trading day
+            # NOTE: valid_trading_days only goes back 90 days (adjust if longer lookback is needed)
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=90), end_date=today)
+            # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
+            # End date: today + 1 day → ensures today’s trading data is included 
+            fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), (today + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
+
+        # Today is a trading day and the market is still open or waiting to open
+        elif today in trading_schedule.index.date and eastern_time < market_close_time:
+            # Get all valid trading days up to yesterday
+            # Exclude today because the market is still open; the last valid trading day is yesterday
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=90), end_date=(today - pd.Timedelta(days=1)))
+            # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
+            # End date: today → excludes today (market still open), but includes yesterday’s data
+            fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), "1d")
+
+        # Today is not a trading day (weekend/holiday)
+        else:
+            # Get all valid trading days up to "today" (if today is not a trading day, this will automatically stop at the most recent valid trading day, e.g. Friday if it's the weekend)
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=90), end_date=today)
+            most_recent_trading_day = valid_trading_days[-1].date()
+            # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
+            # End date = most recent trading day + 1 day (exclusive) → ensures the most recent trading day itself is included
+            fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), (most_recent_trading_day + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
+
+    """
+    Calculations
+    """
+
+    compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
+
+    requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
+    # print(requested_range_dataframe)
+
+    new_close = requested_range_dataframe["Close"].iloc[-1]
+    old_close = requested_range_dataframe["Close"].iloc[-2]
+
+    first_close = requested_range_dataframe["Close"].iloc[0]
+
+    daily_percentage_change = ((new_close - old_close) / old_close) * 100 
+    highest_high = requested_range_dataframe["High"].max()
+    lowest_low = requested_range_dataframe["Low"].min()
+    avg_closing = requested_range_dataframe["Close"].mean()
+    avg_volume = round(requested_range_dataframe["Volume"].mean())
+    range_percentage_change = ((new_close - first_close) / first_close) * 100
+
+    """
+    Printing out the stats
+    """
+
+    print(f"\n{ticker} Stock Analysis (Past {days_range} Trading Days: {valid_trading_days[-days_range].date()} → {valid_trading_days[-1].date()})")
+
+    print(f"\nToday's % Change: {daily_percentage_change:+.2f}%")
+    print(f"Range High: ${highest_high:.2f}")
+    print(f"Range Low: ${lowest_low:.2f}")
+    print(f"Average Closing Price: ${avg_closing:.2f}")
+    print(f"Average Volume: {avg_volume:,} shares")
+    print(f"% Change Over Range: {range_percentage_change:+.2f}%\n")
 
 def visualise_stock_data(ticker, days_range):
     compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
@@ -607,7 +743,7 @@ Testing for live prices
 """
 Testing for data analysis
 """
-# analyse_stock_data("AAPL", 30)
+# analyse_stock_data("MSFT", 15)
 
 """
 Testing for visualisation
@@ -617,7 +753,7 @@ Testing for visualisation
 """
 Testing for alerts
 """
-# percentage_change_alert(["AAPL", "MSFT", "TSLA", "VODL.XC"], 0.5)
+# percentage_change_alert(["AAPL", "MSFT", "TSLA", "VODL.XC", "AMZN"], 0.5)
 
 """
 Testing for email alerts
