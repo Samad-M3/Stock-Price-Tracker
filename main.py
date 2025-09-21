@@ -313,14 +313,11 @@ def fetch_live_price(list_of_tickers):
         current_ticker = yf.Ticker(ticker)
         print(f"{ticker} current price = ${current_ticker.fast_info['lastPrice']:.2f}")
 
-def get_requested_range_dataframe(master_history, ticker, days_range):
-    pass
-
-def analyse_stock_data(ticker, days_range):
-    compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
+def get_requested_range_dataframe(ticker, days_range):
+    global master_history
     
-    if ticker in compiled_history["Ticker"].values:
-        ticker_specific_dataframe = compiled_history[compiled_history["Ticker"] == ticker]
+    if ticker in master_history["Ticker"].values:
+        ticker_specific_dataframe = master_history[master_history["Ticker"] == ticker]
 
         today = datetime.now().date()
         # Forcing the date
@@ -477,14 +474,14 @@ def analyse_stock_data(ticker, days_range):
             # End date = most recent trading day + 1 day (exclusive) → ensures the most recent trading day itself is included
             fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), (most_recent_trading_day + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
 
+    return master_history[master_history["Ticker"] == ticker].tail(days_range), valid_trading_days
+ 
+def analyse_stock_data(ticker, days_range):
+    requested_range_dataframe, valid_trading_days = get_requested_range_dataframe(ticker, days_range)
+
     """
     Calculations
     """
-
-    compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
-
-    requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
-    # print(requested_range_dataframe)
 
     new_close = requested_range_dataframe["Close"].iloc[-1]
     old_close = requested_range_dataframe["Close"].iloc[-2]
