@@ -12,7 +12,6 @@ from pathlib import Path
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
-
 COLUMN_NAMES = ["Date", "Open", "High", "Low", "Close", "Volume", "Ticker"]
 INTERVAL_TO_TIMEDIFF = {
     "1m": pd.Timedelta(minutes=1),
@@ -28,6 +27,16 @@ INTERVAL_TO_TIMEDIFF = {
     "1mo": pd.Timedelta(days=30),
     "3mo": pd.Timedelta(days=90)
 }
+
+master_history = None
+MASTER_FILENAME = "data/historical_data_1d.csv"
+
+def cold_start():
+    global master_history
+    if Path(MASTER_FILENAME).exists():
+        master_history = load_from_csv(MASTER_FILENAME).sort_values(by=["Ticker", "Date"])
+    else:
+        print("Dataframe for '1d' interval doesn't exist, fetch some data first")
 
 def menu():
     while True:
@@ -55,6 +64,7 @@ def menu():
             interval = input(f"\n\nEnter an interval: ")
 
             fetch_historical_data(list_of_tickers, start_date, end_date, interval, verbose=True)
+
         elif option == 2:
             list_of_tickers = []
 
@@ -68,13 +78,16 @@ def menu():
                     break
 
             fetch_live_price(list_of_tickers)
+
         elif option == 3:
             ticker = input(f"\nEnter a ticker: ")
             days_back = int(input(f"Enter how far you would like to go back (measured in days): "))
 
             analyse_stock_data(ticker, days_back)
+
         elif option == 4:
             sub_menu()
+
         elif option == 5:
             percentage_change_alert(["AAPL", "MSFT", "TSLA", "VODL.XC"], 0.5)
         elif option == 6:
@@ -86,19 +99,42 @@ def sub_menu():
         option = int(input(f"\n1. View daily percentage change \n2. View volume over time \n3. Compare closing price vs moving average \n4. View daily high-low range \n5. View cumulative returns \n6. Go back to main menu \n\nChoose an option: "))    
         
         if option == 1:
-            pass
+            ticker = input(f"\nEnter a ticker: ")
+            days_back = int(input(f"Enter how far you would like to go back (measured in days): "))
+
+            generate_daily_percentage_change_chart(ticker, days_back)
+
         elif option == 2:
-            pass
+            ticker = input(f"\nEnter a ticker: ")
+            days_back = int(input(f"Enter how far you would like to go back (measured in days): "))
+
+            generate_volume_over_time_chart(ticker, days_back)
+
         elif option == 3:
-            pass
+            ticker = input(f"\nEnter a ticker: ")
+            days_back = int(input(f"Enter how far you would like to go back (measured in days): "))
+
+            generate_closing_price_vs_moving_average_chart(ticker, days_back)
+
         elif option == 4:
-            pass
+            ticker = input(f"\nEnter a ticker: ")
+            days_back = int(input(f"Enter how far you would like to go back (measured in days): "))
+
+            generate_high_low_range_chart(ticker, days_back)
+
         elif option == 5:
-            pass
+            ticker = input(f"\nEnter a ticker: ")
+            days_back = int(input(f"Enter how far you would like to go back (measured in days): "))
+            investment_amount = int(input(f"Enter how much you would like to invest: "))
+
+            generate_cumulative_returns_chart(ticker, days_back, investment_amount)
+
         elif option == 6:
             break
 
 def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
+    global master_history
+
     # Convert string to datetime (defaults to naive/no timezone)
     start = pd.to_datetime(start)
     # If naive (no timezone), attach New York timezone
@@ -212,6 +248,9 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
         compiled_history.sort_values(by=["Ticker", "Date"], inplace=True)
         save_to_csv(compiled_history, filename)
 
+        if interval == "1d":
+            master_history = compiled_history
+
         if verbose:
             combined_resulting_dataframe = pd.DataFrame(columns=COLUMN_NAMES) # Creating an empty dataframe so each tickers filtered data can be appeneded on and representred as one big dataframe
             # Forces each column into the correct data type
@@ -262,6 +301,9 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
         compiled_history.sort_values(by=["Ticker", "Date"], inplace=True)
         save_to_csv(compiled_history, filename)
 
+        if interval == "1d":
+            master_history = compiled_history
+
         if verbose:
             print(compiled_history.to_string())
 
@@ -270,6 +312,9 @@ def fetch_live_price(list_of_tickers):
     for ticker in list_of_tickers:
         current_ticker = yf.Ticker(ticker)
         print(f"{ticker} current price = ${current_ticker.fast_info['lastPrice']:.2f}")
+
+def get_requested_range_dataframe(master_history, ticker, days_range):
+    pass
 
 def analyse_stock_data(ticker, days_range):
     compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
@@ -466,17 +511,10 @@ def analyse_stock_data(ticker, days_range):
     print(f"Average Volume: {avg_volume:,} shares")
     print(f"% Change Over Range: {range_percentage_change:+.2f}%\n")
 
-def visualise_stock_data(ticker, days_range):
+def generate_daily_percentage_change_chart(ticker, days_range):
     compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
     requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
-    
-    # generate_daily_percentage_change_chart(ticker, days_range, requested_range_dataframe)
-    # generate_volume_over_time_chart(ticker, days_range, requested_range_dataframe)
-    # generate_closing_price_vs_moving_average_chart(ticker, days_range, requested_range_dataframe)
-    # generate_high_low_range_chart(ticker, days_range, requested_range_dataframe)
-    # generate_cumulative_returns_chart(ticker, days_range, requested_range_dataframe, 100000)
 
-def generate_daily_percentage_change_chart(ticker, days_range, requested_range_dataframe):
     requested_range_dataframe["% daily change"] = requested_range_dataframe["Close"].pct_change() * 100
     requested_range_dataframe = requested_range_dataframe.dropna(subset=["% daily change"]).copy()
     requested_range_dataframe["Positive/Negative"] = requested_range_dataframe["% daily change"].apply(lambda x: "Positive" if x >= 0 else "Negative")
@@ -506,7 +544,10 @@ def generate_daily_percentage_change_chart(ticker, days_range, requested_range_d
     plt.tight_layout()
     plt.show()
 
-def generate_volume_over_time_chart(ticker, days_range, requested_range_dataframe):
+def generate_volume_over_time_chart(ticker, days_range):
+    compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
+    requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
+
     requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
 
     # print(requested_range_dataframe)
@@ -531,7 +572,10 @@ def generate_volume_over_time_chart(ticker, days_range, requested_range_datafram
     plt.tight_layout()
     plt.show()
 
-def generate_closing_price_vs_moving_average_chart(ticker, days_range, requested_range_dataframe):
+def generate_closing_price_vs_moving_average_chart(ticker, days_range):
+    compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
+    requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
+
     requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
     requested_range_dataframe["5D MA"] = requested_range_dataframe["Close"].rolling(window=5).mean()
 
@@ -559,7 +603,10 @@ def generate_closing_price_vs_moving_average_chart(ticker, days_range, requested
     plt.tight_layout()
     plt.show()
 
-def generate_high_low_range_chart(ticker, days_range, requested_range_dataframe):
+def generate_high_low_range_chart(ticker, days_range):
+    compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
+    requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
+    
     requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
     requested_range_dataframe["High-Low Range"] = (requested_range_dataframe["High"] - requested_range_dataframe["Low"])
 
@@ -586,7 +633,10 @@ def generate_high_low_range_chart(ticker, days_range, requested_range_dataframe)
     plt.tight_layout()
     plt.show()
 
-def generate_cumulative_returns_chart(ticker, days_range, requested_range_dataframe, investment_amount):
+def generate_cumulative_returns_chart(ticker, days_range, investment_amount):
+    compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
+    requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
+
     requested_range_dataframe["% daily change"] = requested_range_dataframe["Close"].pct_change() * 100
     requested_range_dataframe = requested_range_dataframe.dropna(subset=["% daily change"]).copy()  
     requested_range_dataframe["Cumulative Returns"] = investment_amount * ((1 + requested_range_dataframe["% daily change"] / 100).cumprod())
@@ -748,7 +798,7 @@ Testing for data analysis
 """
 Testing for visualisation
 """
-# visualise_stock_data("AAPL", 30)
+
 
 """
 Testing for alerts
@@ -760,6 +810,8 @@ Testing for email alerts
 """
 # email_alerts("Testing", "abdussamadmohit1@gmail.com", "This is working!")
 
+"""
+Start up the program
+"""
+cold_start()
 menu()
-
-# sub_menu()
