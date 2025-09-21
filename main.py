@@ -172,6 +172,7 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
             # Returns a dataframe for just that ticker
             ticker_specific_dataframe = compiled_history[compiled_history["Ticker"] == ticker]
 
+            # Check for gaps between start and end
             internal_gaps = get_internal_missing_ranges(ticker_specific_dataframe, start, end, interval)
             ticker_object = yf.Ticker(ticker)
             for gap_start, gap_end in internal_gaps:
@@ -318,6 +319,11 @@ def get_requested_range_dataframe(ticker, days_range):
     
     if ticker in master_history["Ticker"].values:
         ticker_specific_dataframe = master_history[master_history["Ticker"] == ticker]
+
+        if len(ticker_specific_dataframe) < days_range:
+            print(f"\n⚠️  Only {len(ticker_specific_dataframe)} trading days available for {ticker}"
+                  f"\nAdjusting requested range from {days_range} → {len(ticker_specific_dataframe)}")
+            days_range = len(ticker_specific_dataframe)
 
         today = datetime.now().date()
         # Forcing the date
@@ -474,10 +480,10 @@ def get_requested_range_dataframe(ticker, days_range):
             # End date = most recent trading day + 1 day (exclusive) → ensures the most recent trading day itself is included
             fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), (most_recent_trading_day + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
 
-    return master_history[master_history["Ticker"] == ticker].tail(days_range), valid_trading_days
+    return master_history[master_history["Ticker"] == ticker].tail(days_range), valid_trading_days, days_range
  
 def analyse_stock_data(ticker, days_range):
-    requested_range_dataframe, valid_trading_days = get_requested_range_dataframe(ticker, days_range)
+    requested_range_dataframe, valid_trading_days, days_range = get_requested_range_dataframe(ticker, days_range)
 
     """
     Calculations
@@ -493,7 +499,7 @@ def analyse_stock_data(ticker, days_range):
     lowest_low = requested_range_dataframe["Low"].min()
     avg_closing = requested_range_dataframe["Close"].mean()
     avg_volume = round(requested_range_dataframe["Volume"].mean())
-    range_percentage_change = ((new_close - first_close) / first_close) * 100
+    range_percentage_change = ((new_close - first_close) / first_close) * 100 # % change in closing price across the entire range (first → last day)
 
     """
     Printing out the stats
@@ -509,19 +515,18 @@ def analyse_stock_data(ticker, days_range):
     print(f"% Change Over Range: {range_percentage_change:+.2f}%\n")
 
 def generate_daily_percentage_change_chart(ticker, days_range):
-    compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
-    requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
+    requested_range_dataframe, valid_trading_days, days_range = get_requested_range_dataframe(ticker, days_range)
 
     requested_range_dataframe["% daily change"] = requested_range_dataframe["Close"].pct_change() * 100
     requested_range_dataframe = requested_range_dataframe.dropna(subset=["% daily change"]).copy()
-    requested_range_dataframe["Positive/Negative"] = requested_range_dataframe["% daily change"].apply(lambda x: "Positive" if x >= 0 else "Negative")
+    requested_range_dataframe["Positive/Negative"] = requested_range_dataframe["% daily change"].apply(lambda x: "Positive" if x >= 0 else "Negative") # Label each row as "Positive" or "Negative" based on the sign of its daily % change
     requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
     colours = {
         "Positive": "#2ecc71",
         "Negative": "#e74c3c"
     }
-    
-    # print(requested_range_dataframe)
+
+    print(f"\nℹ️  Note: First row for {ticker} percentage change is NaN, so it was dropped")
 
     fig = plt.figure(figsize=(8, 5))
     fig.canvas.manager.set_window_title(f"{ticker} - Daily % Change")
@@ -532,7 +537,7 @@ def generate_daily_percentage_change_chart(ticker, days_range):
     plt.axhline(0, color = "black", linewidth = 1)
     sns.barplot(x="Shortend Date", y="% daily change", data=requested_range_dataframe, hue="Positive/Negative", palette=colours)
 
-    plt.title(f"{ticker} - Daily Percentage Change (Last {days_range} Days)")
+    plt.title(f"{ticker} - Daily Percentage Change (Last {days_range - 1} Trading Days)")
     plt.xlabel("Date")
     plt.ylabel("% change")
     plt.xticks(rotation=45)
@@ -542,12 +547,9 @@ def generate_daily_percentage_change_chart(ticker, days_range):
     plt.show()
 
 def generate_volume_over_time_chart(ticker, days_range):
-    compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
-    requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
+    requested_range_dataframe, valid_trading_days, days_range = get_requested_range_dataframe(ticker, days_range)
 
     requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
-
-    # print(requested_range_dataframe)
 
     fig = plt.figure(figsize=(8, 5))
     fig.canvas.manager.set_window_title(f"{ticker} - Volume Over Time")
@@ -557,7 +559,7 @@ def generate_volume_over_time_chart(ticker, days_range):
 
     sns.barplot(x="Shortend Date", y="Volume", data=requested_range_dataframe, color="#3498db")
 
-    plt.title(f"{ticker} - Daily Trading Volume (Last {days_range} Days)")
+    plt.title(f"{ticker} - Daily Trading Volume (Last {days_range} Trading Days)")
     plt.xlabel("Date")
     plt.ylabel("Volume")
     plt.xticks(rotation=45)
@@ -570,13 +572,10 @@ def generate_volume_over_time_chart(ticker, days_range):
     plt.show()
 
 def generate_closing_price_vs_moving_average_chart(ticker, days_range):
-    compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
-    requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
+    requested_range_dataframe, valid_trading_days, days_range = get_requested_range_dataframe(ticker, days_range)
 
     requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
     requested_range_dataframe["5D MA"] = requested_range_dataframe["Close"].rolling(window=5).mean()
-
-    # print(requested_range_dataframe)
 
     fig = plt.figure(figsize=(8, 5))
     fig.canvas.manager.set_window_title(f"{ticker} - Closing Price vs Moving Average")
@@ -587,7 +586,7 @@ def generate_closing_price_vs_moving_average_chart(ticker, days_range):
     sns.lineplot(x="Shortend Date", y="Close", data=requested_range_dataframe, label="Closing Price", color="#2980b9")
     sns.lineplot(x="Shortend Date", y="5D MA", data=requested_range_dataframe, label="5-Day MA", color="#f39c12")
 
-    plt.title(f"{ticker} - Closing Price with 5-Day Moving Average (Last {days_range} Days)")
+    plt.title(f"{ticker} - Closing Price with 5-Day Moving Average (Last {days_range} Trading Days)")
     plt.xlabel("Date")
     plt.ylabel("Price")
     plt.xticks(rotation=45)
@@ -601,8 +600,7 @@ def generate_closing_price_vs_moving_average_chart(ticker, days_range):
     plt.show()
 
 def generate_high_low_range_chart(ticker, days_range):
-    compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
-    requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
+    requested_range_dataframe, valid_trading_days, days_range = get_requested_range_dataframe(ticker, days_range)
     
     requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
     requested_range_dataframe["High-Low Range"] = (requested_range_dataframe["High"] - requested_range_dataframe["Low"])
@@ -617,7 +615,7 @@ def generate_high_low_range_chart(ticker, days_range):
 
     plt.fill_between(requested_range_dataframe["Shortend Date"], requested_range_dataframe["High-Low Range"], color="#3498db", alpha=0.4, edgecolor="#2980b9")
 
-    plt.title(f"{ticker} - Daily High-Low Range (Last {days_range} Days)")
+    plt.title(f"{ticker} - Daily High-Low Range (Last {days_range} Trading Days)")
     plt.xlabel("Date")
     plt.ylabel("Price Range")
     plt.xticks(rotation=45)
@@ -631,12 +629,11 @@ def generate_high_low_range_chart(ticker, days_range):
     plt.show()
 
 def generate_cumulative_returns_chart(ticker, days_range, investment_amount):
-    compiled_history = load_from_csv("data/historical_data_1d.csv").sort_values(by=["Ticker", "Date"])
-    requested_range_dataframe = compiled_history[compiled_history["Ticker"] == ticker].tail(days_range)
+    requested_range_dataframe, valid_trading_days, days_range = get_requested_range_dataframe(ticker, days_range)
 
-    requested_range_dataframe["% daily change"] = requested_range_dataframe["Close"].pct_change() * 100
-    requested_range_dataframe = requested_range_dataframe.dropna(subset=["% daily change"]).copy()  
-    requested_range_dataframe["Cumulative Returns"] = investment_amount * ((1 + requested_range_dataframe["% daily change"] / 100).cumprod())
+    requested_range_dataframe["% daily change"] = requested_range_dataframe["Close"].pct_change()
+    multipliers = (1 + requested_range_dataframe["% daily change"]).fillna(1) 
+    requested_range_dataframe["Cumulative Returns"] = investment_amount * multipliers.cumprod()
     requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
 
     fig = plt.figure(figsize=(8, 5))
@@ -647,13 +644,13 @@ def generate_cumulative_returns_chart(ticker, days_range, investment_amount):
 
     sns.lineplot(x="Shortend Date", y="Cumulative Returns", data=requested_range_dataframe, color="#e67e22", linewidth=2)
 
-    plt.title(f"{ticker} - Cumulative Returns (Last {days_range} Days)")
+    plt.title(f"{ticker} - Cumulative Returns (Last {days_range} Trading Days)")
     plt.xlabel("Date")
     plt.ylabel(f"Value of ${investment_amount:,} Invested")
     plt.xticks(rotation=45)
 
     plt.xlim(requested_range_dataframe["Shortend Date"].iloc[0], requested_range_dataframe["Shortend Date"].iloc[-1])
-    plt.ylim(bottom=investment_amount)
+    # plt.ylim(bottom=investment_amount)
     ax = plt.gca()
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
 
@@ -754,21 +751,36 @@ def get_filename(interval):
     return f"data/historical_data_{interval}.csv"
 
 def get_internal_missing_ranges(dataframe, start, end, interval):
+    # Extract only the rows that fall within the requested date range
     requested_range_dataframe  = dataframe[(dataframe["Date"] >= start) & (dataframe["Date"] <= end)].sort_values(by="Date")
+
     gaps = []
 
-    # Case 1: no rows in requested range → the entire range is a gap
+    # Case 1: No rows at all → entire requested range is missing
     if requested_range_dataframe.empty:
         return [(start, end)]
     
-    # Case 2: check for gaps between existing rows
+    # Case 2: Check if first row starts after the requested start
+    first_row_date = requested_range_dataframe["Date"].iloc[0]
+    if first_row_date > start:
+        # Gap from requested start until the first available date
+        gaps.append((start, first_row_date))
+    
+    # Case 3: Look for gaps *inside* the available rows
     for i in range(len(requested_range_dataframe) - 1):
         current_date = requested_range_dataframe["Date"].iloc[i]
         next_date = requested_range_dataframe["Date"].iloc[i+1]
 
+        # If the next row jumps by more than one interval → gap
         if next_date > current_date + INTERVAL_TO_TIMEDIFF[interval]:
             # Gap starts just after current_date, and ends at next_date
             gaps.append((current_date + INTERVAL_TO_TIMEDIFF[interval], next_date))
+
+    # Case 4: Check if last row ends before the requested end
+    last_row_date = requested_range_dataframe["Date"].iloc[-1]
+    if last_row_date < end:
+        # Gap from just after last available date until requested end
+        gaps.append((last_row_date + INTERVAL_TO_TIMEDIFF[interval], end + INTERVAL_TO_TIMEDIFF[interval]))
 
     return gaps
 
