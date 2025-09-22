@@ -41,28 +41,81 @@ def cold_start():
 
 def menu():
     while True:
-        print(f"\n🏦 Welcome to the Stock Price Tracker!")
-        option = int(input(f"\n1. Fetch Historical Data \n2. Fetch Live Price \n3. Analyse Stock Data \n4. Visualise Stock Data \n5. Configure & Test Percentage Change Alert \n6. Exit Program \n\nChoose an option: "))
+        while True:
+            try:
+                print(f"\n🏦 Welcome to the Stock Price Tracker!")
+                option = int(input(f"\n1. Fetch Historical Data \n2. Fetch Live Price \n3. Analyse Stock Data \n4. Visualise Stock Data \n5. Configure & Test Percentage Change Alert \n6. Exit Program \n\nChoose an option: "))
+                if option < 1 or option > 6:
+                    raise ValueError("Option must be between 1 and 6, Please try again")
+            except ValueError as e:
+                print(e)
+            else:
+                break
 
         if option == 1:
             list_of_tickers = []
 
             while True:
-                ticker = input(f"\nEnter a ticker: ")
+                while True:
+                    try:
+                        ticker = input(f"\nEnter a ticker: ").strip().upper()
+                        ticker_object = yf.Ticker(ticker)
+                        history = ticker_object.history(period="1d")
+                        if history.empty:
+                            raise ValueError("Invalid ticker symbol, Please try again")
+                    except ValueError as e:
+                        print(e)
+                    except Exception as e:
+                        # Something else went wrong (network down, API error, etc.)
+                        print(f"Unexpected error: {e}")
+                    else:
+                        break
                 list_of_tickers.append(ticker)
-                add_another_ticker = input(f"Would you like to enter another ticker (Yes/No)? ").strip().capitalize()
+                while True:
+                    try:
+                        add_another_ticker = input(f"Would you like to enter another ticker (Yes/No)? ").strip().capitalize()
+                        if add_another_ticker != "Yes" and add_another_ticker != "No":
+                            raise ValueError(f"Incorrect value entered, Please try again\n")
+                    except ValueError as e:
+                        print(e)
+                    else:
+                        break
                 if add_another_ticker == "Yes":
                     pass
                 elif add_another_ticker == "No":
                     break
 
-            start_date = input(f"\nEnter a start date (inclusive): ")
-            end_date = input(f"\nEnter an end date (exclusive): ")
+            while True:
+                try:
+                    start_date = input(f"\nEnter a start date (inclusive): ")
+                    parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d")
+                except ValueError as e:
+                    print(e)
+                else:
+                    break
+            while True:
+                try:
+                    end_date = input(f"\nEnter an end date (exclusive): ")
+                    parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d")
+                    if parsed_end_date <= parsed_start_date:
+                        raise ValueError("End date must be after start date, Please try again")
+                except ValueError as e:
+                    print(e)
+                else:
+                    break
 
             print(f"\nValid intervals:")
             for key in INTERVAL_TO_TIMEDIFF:
                 print(key, end=", ")
-            interval = input(f"\n\nEnter an interval: ")
+            while True:
+                try:
+                    interval = input(f"\n\nEnter an interval: ")
+                    if interval not in INTERVAL_TO_TIMEDIFF.keys():
+                        raise ValueError("Invalid interval entered, Please try again")
+                except ValueError as e:
+                    print(e)
+                else:
+                    break
 
             fetch_historical_data(list_of_tickers, start_date, end_date, interval, verbose=True)
 
