@@ -7,6 +7,7 @@ import pandas_market_calendars as mcal
 import sys
 import os
 import smtplib
+import json
 from email.message import EmailMessage
 from pathlib import Path
 from datetime import datetime, time
@@ -41,7 +42,7 @@ def cold_start():
 def menu():
     while True:
         print(f"\n🏦 Welcome to the Stock Price Tracker!")
-        option = int(input(f"\n1. Fetch Historical Data \n2. Fetch Live Price \n3. Analyse Stock Data \n4. Visualise Stock Data \n5. Set Percentage Change Alert \n6. Exit Program \n\nChoose an option: "))
+        option = int(input(f"\n1. Fetch Historical Data \n2. Fetch Live Price \n3. Analyse Stock Data \n4. Visualise Stock Data \n5. Configure & Test Percentage Change Alert \n6. Exit Program \n\nChoose an option: "))
 
         if option == 1:
             list_of_tickers = []
@@ -86,18 +87,18 @@ def menu():
             analyse_stock_data(ticker, days_back)
 
         elif option == 4:
-            sub_menu()
+            chart_selection_menu()
 
         elif option == 5:
-            percentage_change_alert(["AAPL", "MSFT", "TSLA", "VODL.XC"], 0.5)
+            email_alert_menu()
 
         elif option == 6:
             exit_program()
 
-def sub_menu():
+def chart_selection_menu():
     while True:
         print(f"\n📊 Chart Options:")
-        option = int(input(f"\n1. View daily percentage change \n2. View volume over time \n3. Compare closing price vs moving average \n4. View daily high-low range \n5. View cumulative returns \n6. Go back to main menu \n\nChoose an option: "))    
+        option = int(input(f"\n1. View Daily Percentage Change \n2. View Volume Over Time \n3. Compare Closing Price VS Moving Average \n4. View Daily High-Low Range \n5. View Cumulative Returns \n6. Back to Main Menu \n\nChoose an option: "))    
         
         if option == 1:
             ticker = input(f"\nEnter a ticker: ")
@@ -131,6 +132,44 @@ def sub_menu():
             generate_cumulative_returns_chart(ticker, days_back, investment_amount)
 
         elif option == 6:
+            break
+
+def email_alert_menu():
+    while True:
+        option = int(input(f"\n1. Configure Alerts \n2. Test Alerts \n3. Back to Main Menu \n\nChoose an option: "))
+
+        if option == 1:
+            list_of_tickers = []
+
+            while True:
+                ticker = input(f"\nEnter a ticker: ").strip().upper()
+                list_of_tickers.append(ticker)
+                add_another_ticker = input(f"Would you like to enter another ticker (Yes/No)? ").strip().capitalize()
+                if add_another_ticker == "Yes":
+                    pass
+                elif add_another_ticker == "No":
+                    break
+            
+            threshold_value = float(input(f"\nEnter a value for the threshold: "))
+            recipient_email = input("Enter your email address: ")
+
+            data = None
+
+            with open("alert_config.json", "r") as f:
+                data = json.load(f)
+                data["tickers"] = list_of_tickers
+                data["threshold"] = threshold_value
+                data["recipient_email"] = recipient_email
+
+            with open("alert_config.json", "w") as f:
+                json.dump(data, f, indent=4)
+
+            print(f"\nConfiguration Successful!")
+        
+        elif option == 2:
+            percentage_change_alert(list_of_tickers, threshold_value, recipient_email, verbose=True)
+
+        elif option == 3:
             break
 
 def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
@@ -655,7 +694,7 @@ def generate_cumulative_returns_chart(ticker, days_range, investment_amount):
     plt.tight_layout()
     plt.show()
 
-def percentage_change_alert(list_of_ticker, alert_threshold):
+def percentage_change_alert(list_of_tickers, alert_threshold, recipient_email, verbose=False):
     today = datetime.now().date()
     nyse = mcal.get_calendar("NYSE")
     trading_schedule = nyse.schedule(start_date=today, end_date=today)
@@ -670,12 +709,13 @@ def percentage_change_alert(list_of_ticker, alert_threshold):
     strings = []
 
     if today in trading_schedule.index.date and eastern_time >= market_close_time:
-        for ticker in list_of_ticker:
+        for ticker in list_of_tickers:
             ticker_object = yf.Ticker(ticker)
             history =  ticker_object.history(period="2d")
 
             if len(history) < 2:
-                print(f"Not enough data for {ticker}")
+                if verbose:
+                    print(f"Not enough data for {ticker}")
                 continue
 
             last_close = history["Close"].iloc[-1]
@@ -686,33 +726,38 @@ def percentage_change_alert(list_of_ticker, alert_threshold):
             if percentage_change > alert_threshold:
                 string = f"ALERT: {ticker} rose {percentage_change:+.2f}% today!"
                 strings.append(string)
-                print(string)
+                if verbose:
+                    print(string)
             elif percentage_change < -alert_threshold:
                 string = f"ALERT: {ticker} dropped {percentage_change:+.2f}% today!"
                 strings.append(string)
-                print(string)
+                if verbose:
+                    print(string)
             else:
                 string = f"ALERT: {ticker} does not meet threshold requirement."
                 strings.append(string)
-                print(string)        
+                if verbose:
+                    print(string)        
 
         body = f"Daily Stock Alerts:\n\n{'\n'.join(strings)}"
     elif today in trading_schedule.index.date and eastern_time < market_open_time:
         string = "Market not yet open — waiting to open."
-        print(string)
+        if verbose:
+            print(string)
         body = string
     elif today in trading_schedule.index.date and (market_open_time <= eastern_time < market_close_time):
         string = "Market is open — wait until close for daily % change."
-        print(string)
+        if verbose:
+            print(string)
         body = string
     elif today not in trading_schedule.index.date:
         string = "Market closed today (holiday/weekend)."
-        print(string)
+        if verbose:
+            print(string)
         body = string
 
     subject = f"Stock Market Update - {today.strftime('%d %b %Y')}"
-    to = "abdussamadmohit1@gmail.com"
-    email_alerts(subject, to, body)
+    email_alerts(subject, recipient_email, body)
 
 def email_alerts(subject, to, body):
     # Get email + password from environment variables for security
@@ -823,5 +868,7 @@ Testing for email alerts
 """
 Start up the program
 """
-cold_start()
-menu()
+
+if __name__ == "__main__":
+    cold_start()
+    menu()
