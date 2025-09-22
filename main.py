@@ -90,6 +90,7 @@ def menu():
 
         elif option == 5:
             percentage_change_alert(["AAPL", "MSFT", "TSLA", "VODL.XC"], 0.5)
+
         elif option == 6:
             exit_program()
 
@@ -605,8 +606,6 @@ def generate_high_low_range_chart(ticker, days_range):
     requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
     requested_range_dataframe["High-Low Range"] = (requested_range_dataframe["High"] - requested_range_dataframe["Low"])
 
-    # print(requested_range_dataframe)
-
     fig = plt.figure(figsize=(8, 5))
     fig.canvas.manager.set_window_title(f"{ticker} - Daily High-Low Range")
 
@@ -631,9 +630,9 @@ def generate_high_low_range_chart(ticker, days_range):
 def generate_cumulative_returns_chart(ticker, days_range, investment_amount):
     requested_range_dataframe, valid_trading_days, days_range = get_requested_range_dataframe(ticker, days_range)
 
-    requested_range_dataframe["% daily change"] = requested_range_dataframe["Close"].pct_change()
-    multipliers = (1 + requested_range_dataframe["% daily change"]).fillna(1) 
-    requested_range_dataframe["Cumulative Returns"] = investment_amount * multipliers.cumprod()
+    requested_range_dataframe["% daily change"] = requested_range_dataframe["Close"].pct_change() # Daily returns as fractional change (e.g., 0.02 = +2%)
+    multipliers = (1 + requested_range_dataframe["% daily change"]).fillna(1) # Convert returns to growth multipliers (1 + change); replace NaN in first row with 1 (no change)
+    requested_range_dataframe["Cumulative Returns"] = investment_amount * multipliers.cumprod() # Cumulative compounded value of investment over time
     requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
 
     fig = plt.figure(figsize=(8, 5))
@@ -646,11 +645,10 @@ def generate_cumulative_returns_chart(ticker, days_range, investment_amount):
 
     plt.title(f"{ticker} - Cumulative Returns (Last {days_range} Trading Days)")
     plt.xlabel("Date")
-    plt.ylabel(f"Value of ${investment_amount:,} Invested")
+    plt.ylabel(f"Value of a ${investment_amount:,} Investment")
     plt.xticks(rotation=45)
 
     plt.xlim(requested_range_dataframe["Shortend Date"].iloc[0], requested_range_dataframe["Shortend Date"].iloc[-1])
-    # plt.ylim(bottom=investment_amount)
     ax = plt.gca()
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
 
@@ -667,7 +665,7 @@ def percentage_change_alert(list_of_ticker, alert_threshold):
     market_open_time = time(hour=9, minute=30, second=0)
     market_close_time = time(hour=16, minute=0, second=0)
 
-    # eastern_time = time(hour=19, minute=0, second=0)
+    # eastern_time = time(hour=1, minute=0, second=0)
 
     strings = []
 
@@ -694,38 +692,41 @@ def percentage_change_alert(list_of_ticker, alert_threshold):
                 strings.append(string)
                 print(string)
             else:
-                string = f"{ticker}: Does not meet threshold requirement."
+                string = f"ALERT: {ticker} does not meet threshold requirement."
                 strings.append(string)
                 print(string)        
 
         body = f"Daily Stock Alerts:\n\n{'\n'.join(strings)}"
+    elif today in trading_schedule.index.date and eastern_time < market_open_time:
+        string = "Market not yet open — waiting to open."
+        print(string)
+        body = string
+    elif today in trading_schedule.index.date and (market_open_time <= eastern_time < market_close_time):
+        string = "Market is open — wait until close for daily % change."
+        print(string)
+        body = string
     elif today not in trading_schedule.index.date:
         string = "Market closed today (holiday/weekend)."
-        body = string
         print(string)
-    elif eastern_time < market_open_time:
-        string = "Market not open yet — waiting for open."
         body = string
-        print(string)
-    elif market_open_time <= eastern_time < market_close_time:
-        string = "Market is open — wait until close for daily % change."
-        body = string
-        print(string)
 
     subject = f"Stock Market Update - {today.strftime('%d %b %Y')}"
     to = "abdussamadmohit1@gmail.com"
     email_alerts(subject, to, body)
 
 def email_alerts(subject, to, body):
+    # Get email + password from environment variables for security
     EMAIL_ADDRESS = os.environ.get("EMAIL_USER")
     EMAIL_PASSWORD = os.environ.get("EMAIL_PASS")
 
+    # Create email object with subject, sender, recipient, and body
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = EMAIL_ADDRESS
     msg["To"] = to
     msg.set_content(body)
 
+    # Connect to Gmail’s SMTP server using SSL and send the email
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
         smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
 
