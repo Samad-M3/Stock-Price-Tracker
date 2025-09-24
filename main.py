@@ -56,30 +56,9 @@ def menu():
             list_of_tickers = []
 
             while True:
-                while True:
-                    try:
-                        ticker = input(f"\nEnter a ticker: ").strip().upper()
-                        ticker_object = yf.Ticker(ticker)
-                        history = ticker_object.history(period="1d")
-                        if history.empty:
-                            raise ValueError("Invalid ticker symbol, Please try again")
-                    except ValueError as e:
-                        print(e)
-                    except Exception as e:
-                        # Something else went wrong (network down, API error, etc.)
-                        print(f"Unexpected error: {e}")
-                    else:
-                        break
+                ticker = validated_ticker()
                 list_of_tickers.append(ticker)
-                while True:
-                    try:
-                        add_another_ticker = input(f"Would you like to enter another ticker (Yes/No)? ").strip().capitalize()
-                        if add_another_ticker != "Yes" and add_another_ticker != "No":
-                            raise ValueError(f"Incorrect value entered, Please try again\n")
-                    except ValueError as e:
-                        print(e)
-                    else:
-                        break
+                add_another_ticker = validated_option_yes_or_no()
                 if add_another_ticker == "Yes":
                     pass
                 elif add_another_ticker == "No":
@@ -87,15 +66,16 @@ def menu():
 
             while True:
                 try:
-                    start_date = input(f"\nEnter a start date (inclusive): ")
+                    start_date = input(f"\nEnter a start date (inclusive) [YYYY-MM-DD]: ")
                     parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d")
                 except ValueError as e:
                     print(e)
                 else:
                     break
+                
             while True:
                 try:
-                    end_date = input(f"\nEnter an end date (exclusive): ")
+                    end_date = input(f"\nEnter an end date (exclusive) [YYYY-MM-DD]: ")
                     parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d")
                     if parsed_end_date <= parsed_start_date:
                         raise ValueError("End date must be after start date, Please try again")
@@ -107,9 +87,10 @@ def menu():
             print(f"\nValid intervals:")
             for key in INTERVAL_TO_TIMEDIFF:
                 print(key, end=", ")
+            print() # Readability purposes
             while True:
                 try:
-                    interval = input(f"\n\nEnter an interval: ")
+                    interval = input(f"\nEnter an interval: ")
                     if interval not in INTERVAL_TO_TIMEDIFF.keys():
                         raise ValueError("Invalid interval entered, Please try again")
                 except ValueError as e:
@@ -123,9 +104,9 @@ def menu():
             list_of_tickers = []
 
             while True:
-                ticker = input(f"\nEnter a ticker: ")
+                ticker = validated_ticker()
                 list_of_tickers.append(ticker)
-                add_another_ticker = input(f"Would you like to enter another ticker (Yes/No)? ").strip().capitalize()
+                add_another_ticker = validated_option_yes_or_no()
                 if add_another_ticker == "Yes":
                     pass
                 elif add_another_ticker == "No":
@@ -134,8 +115,8 @@ def menu():
             fetch_live_price(list_of_tickers)
 
         elif option == 3:
-            ticker = input(f"\nEnter a ticker: ")
-            days_back = int(input(f"Enter how far you would like to go back (measured in days): "))
+            ticker = validated_ticker()
+            days_back = validated_look_back_value(2)
 
             analyse_stock_data(ticker, days_back)
 
@@ -148,39 +129,126 @@ def menu():
         elif option == 6:
             exit_program()
 
+def validated_ticker():
+    while True:
+        try:
+            ticker = input(f"\nEnter a ticker: ").strip().upper()
+            ticker_object = yf.Ticker(ticker)
+            history = ticker_object.history(period="1d")
+            if history.empty:
+                raise ValueError("Invalid ticker symbol, Please try again")
+        except ValueError as e:
+            print(e)
+        except Exception as e:
+            # Something else went wrong (network down, API error, etc.)
+            print(f"Unexpected error: {e}")
+        else:
+            return ticker
+        
+def validated_option_yes_or_no():
+    while True:
+        try:
+            add_another_ticker = input(f"Would you like to enter another ticker (Yes/No)? ").strip().capitalize()
+            if add_another_ticker != "Yes" and add_another_ticker != "No":
+                raise ValueError(f"Incorrect value entered, Please try again\n")
+        except ValueError as e:
+            print(e)
+        else:
+            return add_another_ticker
+        
+def validated_look_back_value(min_look_back):
+    while True:
+        try:
+            days_back = int(input(f"Enter how far you would like to go back (measured in days) [Max lookback 180 days]: "))
+            if days_back > 180 or days_back < min_look_back:
+                raise ValueError(f"Invalid lookback period, Please enter a value between {min_look_back} and 180 days\n")
+        except ValueError as e:
+            print(e)
+        else:
+            return days_back
+        
+def validated_email_address():
+    while True:
+        try:
+            recipient_email = input(f"\nEnter your email address: ").strip()
+
+            if recipient_email.count("@") != 1:
+                raise ValueError("Invalid email, Please try again")
+            
+            if " " in recipient_email:
+                raise ValueError("Invalid email, Please try again")
+            
+            local, domain = recipient_email.split("@")
+
+            if not local or not domain:
+                raise ValueError("Invalid email, Please try again")
+            
+            if local[0] == "." or local[-1] == "." or ".." in local:
+                raise ValueError("Invalid email, Please try again")
+            
+            if domain[0] == ".":
+                raise ValueError("Invalid email, Please try again")
+            
+            if "." not in domain:
+                raise ValueError("Invalid email, Please try again")
+            
+            if len(domain.split(".")[-1]) < 2:
+                raise ValueError("Invalid email, Please try again")
+        except ValueError as e:
+            print(e)
+        else:
+            return recipient_email
+    
 def chart_selection_menu():
     while True:
-        print(f"\n📊 Chart Options:")
-        option = int(input(f"\n1. View Daily Percentage Change \n2. View Volume Over Time \n3. Compare Closing Price VS Moving Average \n4. View Daily High-Low Range \n5. View Cumulative Returns \n6. Back to Main Menu \n\nChoose an option: "))    
+        while True:
+            try:
+                print(f"\n📊 Chart Options:")
+                option = int(input(f"\n1. View Daily Percentage Change \n2. View Volume Over Time \n3. Compare Closing Price VS Moving Average \n4. View Daily High-Low Range \n5. View Cumulative Returns \n6. Back to Main Menu \n\nChoose an option: "))
+                if option < 1 or option > 6:
+                    raise ValueError("Option must be between 1 and 6, Please try again")    
+            except ValueError as e:
+                print(e)
+            else:
+                break
         
         if option == 1:
-            ticker = input(f"\nEnter a ticker: ")
-            days_back = int(input(f"Enter how far you would like to go back (measured in days): "))
+            ticker = validated_ticker()
+            days_back = validated_look_back_value(2)
 
             generate_daily_percentage_change_chart(ticker, days_back)
 
         elif option == 2:
-            ticker = input(f"\nEnter a ticker: ")
-            days_back = int(input(f"Enter how far you would like to go back (measured in days): "))
+            ticker = validated_ticker()
+            days_back = validated_look_back_value(1)
 
             generate_volume_over_time_chart(ticker, days_back)
 
         elif option == 3:
-            ticker = input(f"\nEnter a ticker: ")
-            days_back = int(input(f"Enter how far you would like to go back (measured in days): "))
+            ticker = validated_ticker()
+            days_back = validated_look_back_value(2)
 
             generate_closing_price_vs_moving_average_chart(ticker, days_back)
 
         elif option == 4:
-            ticker = input(f"\nEnter a ticker: ")
-            days_back = int(input(f"Enter how far you would like to go back (measured in days): "))
+            ticker = validated_ticker()
+            days_back = validated_look_back_value(2)
 
             generate_high_low_range_chart(ticker, days_back)
 
         elif option == 5:
-            ticker = input(f"\nEnter a ticker: ")
-            days_back = int(input(f"Enter how far you would like to go back (measured in days): "))
-            investment_amount = int(input(f"Enter how much you would like to invest: "))
+            ticker = validated_ticker()
+            days_back = validated_look_back_value(2)
+
+            while True:
+                try:
+                    investment_amount = int(input(f"Enter how much you would like to invest: "))
+                    if investment_amount < 1:
+                        raise ValueError(f"Invalid amount, Please enter a positive amount\n")
+                except ValueError as e:
+                    print(e)
+                else:
+                    break
 
             generate_cumulative_returns_chart(ticker, days_back, investment_amount)
 
@@ -189,22 +257,39 @@ def chart_selection_menu():
 
 def email_alert_menu():
     while True:
-        option = int(input(f"\n1. Configure Alerts \n2. Test Alerts \n3. Back to Main Menu \n\nChoose an option: "))
+        while True:
+            try:
+                option = int(input(f"\n1. Configure Alerts \n2. Test Alerts \n3. Back to Main Menu \n\nChoose an option: "))
+                if option < 1 or option > 3:
+                    raise ValueError("Option must be between 1 and 3, Please try again")
+            except ValueError as e:
+                print(e)
+            else:
+                break
 
         if option == 1:
             list_of_tickers = []
 
             while True:
-                ticker = input(f"\nEnter a ticker: ").strip().upper()
+                ticker = validated_ticker()
                 list_of_tickers.append(ticker)
-                add_another_ticker = input(f"Would you like to enter another ticker (Yes/No)? ").strip().capitalize()
+                add_another_ticker = validated_option_yes_or_no()
                 if add_another_ticker == "Yes":
                     pass
                 elif add_another_ticker == "No":
                     break
             
-            threshold_value = float(input(f"\nEnter a value for the threshold: "))
-            recipient_email = input("Enter your email address: ")
+            while True:
+                try:
+                    threshold_value = float(input(f"\nEnter a value for the threshold [0 - 500]: "))
+                    if threshold_value < 0 or threshold_value > 500:
+                        raise ValueError("Invalid threshold value, Please try again")
+                except ValueError as e:
+                    print(e)
+                else:
+                    break
+
+            recipient_email = validated_email_address()
 
             data = None
 
@@ -220,7 +305,18 @@ def email_alert_menu():
             print(f"\nConfiguration Successful!")
         
         elif option == 2:
-            percentage_change_alert(list_of_tickers, threshold_value, recipient_email, verbose=True)
+            data = None
+
+            with open("alert_config.json", "r") as f:
+                data = json.load(f)
+                if len(data["tickers"]) == 0 or data["threshold"] is None or len(data["recipient_email"]) == 0:
+                    print(f"\n⚠️  Alerts are not configured yet, Please configure alerts first (Option 1)")
+                else:
+                    list_of_tickers = data["tickers"]
+                    threshold_value = data["threshold"]
+                    recipient_email = data["recipient_email"]
+
+                    percentage_change_alert(list_of_tickers, threshold_value, recipient_email, verbose=True)
 
         elif option == 3:
             break
@@ -438,7 +534,7 @@ def get_requested_range_dataframe(ticker, days_range):
 
             # Get all valid trading days up to and including today if it's a trading day
             # NOTE: valid_trading_days only goes back 90 days (adjust if longer lookback is needed)
-            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=90), end_date=today)
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=today)
 
             # Append the last N trading days starting from the most recent (working backwards)
             for i in range(days_range):
@@ -472,7 +568,7 @@ def get_requested_range_dataframe(ticker, days_range):
 
             # Get all valid trading days up to yesterday
             # Exclude today because the market is still open; the last valid trading day is yesterday
-            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=90), end_date=(today - pd.Timedelta(days=1)))
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=(today - pd.Timedelta(days=1)))
 
             # Append the last N trading days starting from the most recent (working backwards)
             # Because we have excluded today from valid_trading_days, valid_trading_days[-1] would be yesterday
@@ -509,7 +605,7 @@ def get_requested_range_dataframe(ticker, days_range):
 
             # Get all valid trading days up to today
             # If today is not a trading day, valid_trading_days[-1] gives the most recent trading day before today
-            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=90), end_date=today)
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=today)
             most_recent_trading_day = valid_trading_days[-1].date()
             # print(most_recent_trading_day)
 
@@ -550,7 +646,7 @@ def get_requested_range_dataframe(ticker, days_range):
         if today in trading_schedule.index.date and eastern_time >= market_close_time:
             # Get all valid trading days up to and including today if it's a trading day
             # NOTE: valid_trading_days only goes back 90 days (adjust if longer lookback is needed)
-            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=90), end_date=today)
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=today)
             # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
             # End date: today + 1 day → ensures today’s trading data is included 
             fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), (today + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
@@ -559,7 +655,7 @@ def get_requested_range_dataframe(ticker, days_range):
         elif today in trading_schedule.index.date and eastern_time < market_close_time:
             # Get all valid trading days up to yesterday
             # Exclude today because the market is still open; the last valid trading day is yesterday
-            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=90), end_date=(today - pd.Timedelta(days=1)))
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=(today - pd.Timedelta(days=1)))
             # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
             # End date: today → excludes today (market still open), but includes yesterday’s data
             fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), "1d")
@@ -567,7 +663,7 @@ def get_requested_range_dataframe(ticker, days_range):
         # Today is not a trading day (weekend/holiday)
         else:
             # Get all valid trading days up to "today" (if today is not a trading day, this will automatically stop at the most recent valid trading day, e.g. Friday if it's the weekend)
-            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=90), end_date=today)
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=today)
             most_recent_trading_day = valid_trading_days[-1].date()
             # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
             # End date = most recent trading day + 1 day (exclusive) → ensures the most recent trading day itself is included
@@ -742,7 +838,12 @@ def generate_cumulative_returns_chart(ticker, days_range, investment_amount):
 
     plt.xlim(requested_range_dataframe["Shortend Date"].iloc[0], requested_range_dataframe["Shortend Date"].iloc[-1])
     ax = plt.gca()
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
+    if days_range == 2 and investment_amount < 7:
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.3f}'))
+    elif investment_amount < 31:
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.2f}'))
+    else:
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x:,.0f}'))
 
     plt.tight_layout()
     plt.show()
@@ -921,7 +1022,6 @@ Testing for email alerts
 """
 Start up the program
 """
-
 if __name__ == "__main__":
     cold_start()
     menu()

@@ -10,6 +10,6 @@
         "NFLX",
         "^GSPC"
     ],
-    "threshold": 2.0,
+    "threshold": 0.75,
     "recipient_email": "abdussamadmohit1@gmail.com"
 }
