@@ -8,6 +8,7 @@ import sys
 import os
 import smtplib
 import json
+import socket
 from email.message import EmailMessage
 from pathlib import Path
 from datetime import datetime, time
@@ -35,11 +36,20 @@ MASTER_FILENAME = "data/historical_data_1d.csv"
 def cold_start():
     global master_history
     if Path(MASTER_FILENAME).exists():
-        master_history = load_from_csv(MASTER_FILENAME).sort_values(by=["Ticker", "Date"])
+        try:
+            master_history = load_from_csv(MASTER_FILENAME).sort_values(by=["Ticker", "Date"])
+        except pd.errors.ParserError as e:
+            print(f"\n⚠️  Could not load {MASTER_FILENAME}, File may be corrupted: {e}")
+        except PermissionError as e:
+            print(f"\n⚠️  Could not read {MASTER_FILENAME}, Check file permissions: {e}")
     else:
         print("Dataframe for '1d' interval doesn't exist, fetch some data first")
 
 def menu():
+    today = datetime.now().date()
+    lower_bound_date = datetime(1950, 1, 1).date()
+    print(lower_bound_date)
+
     while True:
         while True:
             try:
@@ -67,7 +77,9 @@ def menu():
             while True:
                 try:
                     start_date = input(f"\nEnter a start date (inclusive) [YYYY-MM-DD]: ")
-                    parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d")
+                    parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+                    if parsed_start_date > today:
+                        raise ValueError("Start date must not be a future date, Please try again")
                 except ValueError as e:
                     print(e)
                 else:
@@ -76,9 +88,11 @@ def menu():
             while True:
                 try:
                     end_date = input(f"\nEnter an end date (exclusive) [YYYY-MM-DD]: ")
-                    parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d")
+                    parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
                     if parsed_end_date <= parsed_start_date:
                         raise ValueError("End date must be after start date, Please try again")
+                    if parsed_end_date > today + pd.Timedelta(days=1):
+                        raise ValueError("End date must not be in a future date, Please try again")
                 except ValueError as e:
                     print(e)
                 else:
@@ -90,7 +104,8 @@ def menu():
             print() # Readability purposes
             while True:
                 try:
-                    interval = input(f"\nEnter an interval: ")
+                    interval = input(f"\nEnter an interval: ").strip().lower()
+                    print(interval)
                     if interval not in INTERVAL_TO_TIMEDIFF.keys():
                         raise ValueError("Invalid interval entered, Please try again")
                 except ValueError as e:
@@ -115,10 +130,13 @@ def menu():
             fetch_live_price(list_of_tickers)
 
         elif option == 3:
-            ticker = validated_ticker()
-            days_back = validated_look_back_value(2)
+            if Path(MASTER_FILENAME).exists():
+                ticker = validated_ticker()
+                days_back = validated_look_back_value(2)
 
-            analyse_stock_data(ticker, days_back)
+                analyse_stock_data(ticker, days_back)
+            else:
+                print(f"\n⚠️  Historical data for interval **1d** doesn't exist, Please fetch some data first (Option 1)")
 
         elif option == 4:
             chart_selection_menu()
@@ -128,76 +146,6 @@ def menu():
 
         elif option == 6:
             exit_program()
-
-def validated_ticker():
-    while True:
-        try:
-            ticker = input(f"\nEnter a ticker: ").strip().upper()
-            ticker_object = yf.Ticker(ticker)
-            history = ticker_object.history(period="1d")
-            if history.empty:
-                raise ValueError("Invalid ticker symbol, Please try again")
-        except ValueError as e:
-            print(e)
-        except Exception as e:
-            # Something else went wrong (network down, API error, etc.)
-            print(f"Unexpected error: {e}")
-        else:
-            return ticker
-        
-def validated_option_yes_or_no():
-    while True:
-        try:
-            add_another_ticker = input(f"Would you like to enter another ticker (Yes/No)? ").strip().capitalize()
-            if add_another_ticker != "Yes" and add_another_ticker != "No":
-                raise ValueError(f"Incorrect value entered, Please try again\n")
-        except ValueError as e:
-            print(e)
-        else:
-            return add_another_ticker
-        
-def validated_look_back_value(min_look_back):
-    while True:
-        try:
-            days_back = int(input(f"Enter how far you would like to go back (measured in days) [Max lookback 180 days]: "))
-            if days_back > 180 or days_back < min_look_back:
-                raise ValueError(f"Invalid lookback period, Please enter a value between {min_look_back} and 180 days\n")
-        except ValueError as e:
-            print(e)
-        else:
-            return days_back
-        
-def validated_email_address():
-    while True:
-        try:
-            recipient_email = input(f"\nEnter your email address: ").strip()
-
-            if recipient_email.count("@") != 1:
-                raise ValueError("Invalid email, Please try again")
-            
-            if " " in recipient_email:
-                raise ValueError("Invalid email, Please try again")
-            
-            local, domain = recipient_email.split("@")
-
-            if not local or not domain:
-                raise ValueError("Invalid email, Please try again")
-            
-            if local[0] == "." or local[-1] == "." or ".." in local:
-                raise ValueError("Invalid email, Please try again")
-            
-            if domain[0] == ".":
-                raise ValueError("Invalid email, Please try again")
-            
-            if "." not in domain:
-                raise ValueError("Invalid email, Please try again")
-            
-            if len(domain.split(".")[-1]) < 2:
-                raise ValueError("Invalid email, Please try again")
-        except ValueError as e:
-            print(e)
-        else:
-            return recipient_email
     
 def chart_selection_menu():
     while True:
@@ -213,44 +161,59 @@ def chart_selection_menu():
                 break
         
         if option == 1:
-            ticker = validated_ticker()
-            days_back = validated_look_back_value(2)
+            if Path(MASTER_FILENAME).exists():
+                ticker = validated_ticker()
+                days_back = validated_look_back_value(2)
 
-            generate_daily_percentage_change_chart(ticker, days_back)
+                generate_daily_percentage_change_chart(ticker, days_back)
+            else:
+                print(f"\n⚠️  Historical data for interval **1d** doesn't exist, Please fetch some data first (Option 1)")
 
         elif option == 2:
-            ticker = validated_ticker()
-            days_back = validated_look_back_value(1)
+            if Path(MASTER_FILENAME).exists():
+                ticker = validated_ticker()
+                days_back = validated_look_back_value(1)
 
-            generate_volume_over_time_chart(ticker, days_back)
+                generate_volume_over_time_chart(ticker, days_back)
+            else:
+                print(f"\n⚠️  Historical data for interval **1d** doesn't exist, Please fetch some data first (Option 1)")
 
         elif option == 3:
-            ticker = validated_ticker()
-            days_back = validated_look_back_value(2)
+            if Path(MASTER_FILENAME).exists():
+                ticker = validated_ticker()
+                days_back = validated_look_back_value(2)
 
-            generate_closing_price_vs_moving_average_chart(ticker, days_back)
+                generate_closing_price_vs_moving_average_chart(ticker, days_back)
+            else:
+                print(f"\n⚠️  Historical data for interval **1d** doesn't exist, Please fetch some data first (Option 1)")
 
         elif option == 4:
-            ticker = validated_ticker()
-            days_back = validated_look_back_value(2)
+            if Path(MASTER_FILENAME).exists():
+                ticker = validated_ticker()
+                days_back = validated_look_back_value(2)
 
-            generate_high_low_range_chart(ticker, days_back)
+                generate_high_low_range_chart(ticker, days_back)
+            else:
+                print(f"\n⚠️  Historical data for interval **1d** doesn't exist, Please fetch some data first (Option 1)")
 
         elif option == 5:
-            ticker = validated_ticker()
-            days_back = validated_look_back_value(2)
+            if Path(MASTER_FILENAME).exists():
+                ticker = validated_ticker()
+                days_back = validated_look_back_value(2)
 
-            while True:
-                try:
-                    investment_amount = int(input(f"Enter how much you would like to invest: "))
-                    if investment_amount < 1:
-                        raise ValueError(f"Invalid amount, Please enter a positive amount\n")
-                except ValueError as e:
-                    print(e)
-                else:
-                    break
+                while True:
+                    try:
+                        investment_amount = int(input(f"Enter how much you would like to invest: "))
+                        if investment_amount < 1:
+                            raise ValueError(f"Invalid amount, Please enter a positive amount\n")
+                    except ValueError as e:
+                        print(e)
+                    else:
+                        break
 
-            generate_cumulative_returns_chart(ticker, days_back, investment_amount)
+                generate_cumulative_returns_chart(ticker, days_back, investment_amount)
+            else:
+                print(f"\n⚠️  Historical data for interval **1d** doesn't exist, Please fetch some data first (Option 1)")
 
         elif option == 6:
             break
@@ -291,32 +254,42 @@ def email_alert_menu():
 
             recipient_email = validated_email_address()
 
-            data = None
+            try:
+                data = None
 
-            with open("alert_config.json", "r") as f:
-                data = json.load(f)
-                data["tickers"] = list_of_tickers
-                data["threshold"] = threshold_value
-                data["recipient_email"] = recipient_email
+                with open("alert_config.json", "r") as f:
+                    data = json.load(f)
+                    data["tickers"] = list_of_tickers
+                    data["threshold"] = threshold_value
+                    data["recipient_email"] = recipient_email
 
-            with open("alert_config.json", "w") as f:
-                json.dump(data, f, indent=4)
+                with open("alert_config.json", "w") as f:
+                    json.dump(data, f, indent=4)
 
-            print(f"\nConfiguration Successful!")
+                print(f"\nConfiguration Successful!")
+            except json.JSONDecodeError:
+                print(f"\n⚠️  Error: **alert_config.json** is corrupted or not valid JSON")
+            except (PermissionError, OSError) as e:
+                print(f"\n⚠️  Error writing configuration: {e}")
         
         elif option == 2:
-            data = None
+            try:
+                data = None
 
-            with open("alert_config.json", "r") as f:
-                data = json.load(f)
-                if len(data["tickers"]) == 0 or data["threshold"] is None or len(data["recipient_email"]) == 0:
-                    print(f"\n⚠️  Alerts are not configured yet, Please configure alerts first (Option 1)")
-                else:
-                    list_of_tickers = data["tickers"]
-                    threshold_value = data["threshold"]
-                    recipient_email = data["recipient_email"]
+                with open("alert_config.json", "r") as f:
+                    data = json.load(f)
+                    if len(data["tickers"]) == 0 or data["threshold"] is None or len(data["recipient_email"]) == 0:
+                        print(f"\n⚠️  Error: Alerts are not configured yet, Please configure alerts first (Option 1)")
+                    else:
+                        list_of_tickers = data["tickers"]
+                        threshold_value = data["threshold"]
+                        recipient_email = data["recipient_email"]
 
-                    percentage_change_alert(list_of_tickers, threshold_value, recipient_email, verbose=True)
+                        percentage_change_alert(list_of_tickers, threshold_value, recipient_email, verbose=True)
+            except json.JSONDecodeError:
+                print(f"\n⚠️  Error: **alert_config.json** is corrupted or not valid JSON, Please reconfigure alerts (Option 1)")
+            except PermissionError:
+                print(f"\n⚠️  Error: The program does not have permission to read **alert_config.json**, Please reconfigure alerts (Option 1)")
 
         elif option == 3:
             break
@@ -701,7 +674,7 @@ def analyse_stock_data(ticker, days_range):
     print(f"Range Low: ${lowest_low:.2f}")
     print(f"Average Closing Price: ${avg_closing:.2f}")
     print(f"Average Volume: {avg_volume:,} shares")
-    print(f"% Change Over Range: {range_percentage_change:+.2f}%\n")
+    print(f"% Change Over Range: {range_percentage_change:+.2f}%")
 
 def generate_daily_percentage_change_chart(ticker, days_range):
     requested_range_dataframe, valid_trading_days, days_range = get_requested_range_dataframe(ticker, days_range)
@@ -864,8 +837,13 @@ def percentage_change_alert(list_of_tickers, alert_threshold, recipient_email, v
 
     if today in trading_schedule.index.date and eastern_time >= market_close_time:
         for ticker in list_of_tickers:
-            ticker_object = yf.Ticker(ticker)
-            history =  ticker_object.history(period="2d")
+            try:
+                ticker_object = yf.Ticker(ticker)
+                history = ticker_object.history(period="2d")
+            except Exception as e:
+                if verbose:
+                    print(f"\n⚠️  Error fetching data for {ticker}: {e}")
+                continue
 
             if len(history) < 2:
                 if verbose:
@@ -879,35 +857,33 @@ def percentage_change_alert(list_of_tickers, alert_threshold, recipient_email, v
 
             if percentage_change > alert_threshold:
                 string = f"ALERT: {ticker} rose {percentage_change:+.2f}% today!"
-                strings.append(string)
-                if verbose:
-                    print(string)
             elif percentage_change < -alert_threshold:
                 string = f"ALERT: {ticker} dropped {percentage_change:+.2f}% today!"
-                strings.append(string)
-                if verbose:
-                    print(string)
             else:
-                string = f"ALERT: {ticker} does not meet threshold requirement."
-                strings.append(string)
-                if verbose:
-                    print(string)        
+                string = f"ALERT: {ticker} does not meet threshold requirement."   
+ 
+            strings.append(string)
+            if verbose:
+                print(f"\n{string}")
+
+        if not strings:
+            strings.append("No valid alerts generated today.")  
 
         body = f"Daily Stock Alerts:\n\n{'\n'.join(strings)}"
     elif today in trading_schedule.index.date and eastern_time < market_open_time:
         string = "Market not yet open — waiting to open."
         if verbose:
-            print(string)
+            print(f"\n{string}")
         body = string
     elif today in trading_schedule.index.date and (market_open_time <= eastern_time < market_close_time):
         string = "Market is open — wait until close for daily % change."
         if verbose:
-            print(string)
+            print(f"\n{string}")
         body = string
     elif today not in trading_schedule.index.date:
         string = "Market closed today (holiday/weekend)."
         if verbose:
-            print(string)
+            print(f"\n{string}")
         body = string
 
     subject = f"Stock Market Update - {today.strftime('%d %b %Y')}"
@@ -926,10 +902,16 @@ def email_alerts(subject, to, body):
     msg.set_content(body)
 
     # Connect to Gmail’s SMTP server using SSL and send the email
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-
-        smtp.send_message(msg)
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+            smtp.send_message(msg)
+    except smtplib.SMTPAuthenticationError:
+        print(f"\n❌  Authentication failed, Check your email and password environment variables")
+    except (smtplib.SMTPException, socket.gaierror) as e:
+        print(f"\n❌  Failed to send email: {e}")
+    except Exception as e:
+        print(f"\n❌  Unexpected error while sending email: {e}")
 
 def exit_program():
     print("Closing program...")
@@ -984,44 +966,76 @@ def get_internal_missing_ranges(dataframe, start, end, interval):
 
     return gaps
 
-"""
-Testing for historical data
-"""
-# fetch_historical_data(["TSLA"], "2025-08-01", "2025-09-01", "1d")
-# fetch_historical_data(["AAPL"], "2025-08-01", "2025-09-01", "1d")
-# fetch_historical_data(["AAPL"], "2025-08-01", "2025-09-01", "1d")
-# fetch_historical_data(["MSFT", "AAPL"], "2025-08-24", "2025-09-08", "1d")
-# fetch_historical_data(["AAPL"], "2025-08-13", "2025-09-13", "1d")
-# fetch_historical_data(["AAPL"], "2025-08-28", "2025-09-15", "1d")
+def validated_ticker():
+    while True:
+        try:
+            ticker = input(f"\nEnter a ticker: ").strip().upper()
+            ticker_object = yf.Ticker(ticker)
+            history = ticker_object.history(period="1d")
+            if history.empty:
+                raise ValueError("Invalid ticker symbol, Please try again")
+        except ValueError as e:
+            print(e)
+        except Exception as e:
+            # Something else went wrong (network down, API error, etc.)
+            print(f"Unexpected error: {e}")
+        else:
+            return ticker
+        
+def validated_option_yes_or_no():
+    while True:
+        try:
+            add_another_ticker = input(f"Would you like to enter another ticker (Yes/No)? ").strip().capitalize()
+            if add_another_ticker != "Yes" and add_another_ticker != "No":
+                raise ValueError(f"Incorrect value entered, Please try again\n")
+        except ValueError as e:
+            print(e)
+        else:
+            return add_another_ticker
+        
+def validated_look_back_value(min_look_back):
+    while True:
+        try:
+            days_back = int(input(f"Enter how far you would like to go back (measured in days) [Max lookback 180 days]: "))
+            if days_back > 180 or days_back < min_look_back:
+                raise ValueError(f"Invalid lookback period, Please enter a value between {min_look_back} and 180 days\n")
+        except ValueError as e:
+            print(e)
+        else:
+            return days_back
+        
+def validated_email_address():
+    while True:
+        try:
+            recipient_email = input(f"\nEnter your email address: ").strip()
 
-"""
-Testing for live prices
-"""
-# fetch_live_price(["AAPL", "MSFT", "TSLA", "AMZN"])
+            if recipient_email.count("@") != 1:
+                raise ValueError("Invalid email, Please try again")
+            
+            if " " in recipient_email:
+                raise ValueError("Invalid email, Please try again")
+            
+            local, domain = recipient_email.split("@")
 
-"""
-Testing for data analysis
-"""
-# analyse_stock_data("MSFT", 15)
+            if not local or not domain:
+                raise ValueError("Invalid email, Please try again")
+            
+            if local[0] == "." or local[-1] == "." or ".." in local:
+                raise ValueError("Invalid email, Please try again")
+            
+            if domain[0] == ".":
+                raise ValueError("Invalid email, Please try again")
+            
+            if "." not in domain:
+                raise ValueError("Invalid email, Please try again")
+            
+            if len(domain.split(".")[-1]) < 2:
+                raise ValueError("Invalid email, Please try again")
+        except ValueError as e:
+            print(e)
+        else:
+            return recipient_email
 
-"""
-Testing for visualisation
-"""
-
-
-"""
-Testing for alerts
-"""
-# percentage_change_alert(["AAPL", "MSFT", "TSLA", "VODL.XC", "AMZN"], 0.5)
-
-"""
-Testing for email alerts
-"""
-# email_alerts("Testing", "abdussamadmohit1@gmail.com", "This is working!")
-
-"""
-Start up the program
-"""
 if __name__ == "__main__":
     cold_start()
     menu()
