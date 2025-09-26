@@ -48,7 +48,6 @@ def cold_start():
 def menu():
     today = datetime.now().date()
     lower_bound_date = datetime(1950, 1, 1).date()
-    print(lower_bound_date)
 
     while True:
         while True:
@@ -74,42 +73,37 @@ def menu():
                 elif add_another_ticker == "No":
                     break
 
-            while True:
-                try:
-                    start_date = input(f"\nEnter a start date (inclusive) [YYYY-MM-DD]: ")
-                    parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
-                    if parsed_start_date > today:
-                        raise ValueError("Start date must not be a future date, Please try again")
-                except ValueError as e:
-                    print(e)
-                else:
-                    break
-                
-            while True:
-                try:
-                    end_date = input(f"\nEnter an end date (exclusive) [YYYY-MM-DD]: ")
-                    parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
-                    if parsed_end_date <= parsed_start_date:
-                        raise ValueError("End date must be after start date, Please try again")
-                    if parsed_end_date > today + pd.Timedelta(days=1):
-                        raise ValueError("End date must not be in a future date, Please try again")
-                except ValueError as e:
-                    print(e)
-                else:
-                    break
+            start_date, parsed_start_date = get_start_date(today, lower_bound_date)
 
-            print(f"\nValid intervals:")
-            for key in INTERVAL_TO_TIMEDIFF:
-                print(key, end=", ")
-            print() # Readability purposes
+            end_date = get_end_date(today, parsed_start_date)
+
+            interval = get_interval()
+
             while True:
-                try:
-                    interval = input(f"\nEnter an interval: ").strip().lower()
-                    print(interval)
-                    if interval not in INTERVAL_TO_TIMEDIFF.keys():
-                        raise ValueError("Invalid interval entered, Please try again")
-                except ValueError as e:
-                    print(e)
+                if interval ==  "1m":
+                    seven_days_from_today = today - pd.Timedelta(days=7)
+                    if parsed_start_date < seven_days_from_today:
+                        print(f"\n1m interval has a maximum lookback of 7 days from today, Please try again")
+
+                        start_date, parsed_start_date = get_start_date(today, lower_bound_date)
+
+                        end_date = get_end_date(today, parsed_start_date)
+
+                        interval = get_interval()
+                    else:
+                        break
+                elif interval in {"2m", "5m", "15m", "30m", "60m", "90m"}:
+                    sixty_days_from_today = today - pd.Timedelta(days=59)
+                    if parsed_start_date < sixty_days_from_today:
+                        print(f"\n2m/5m/15m/30m/60m/90m interval has a maximum lookback of 60 days from today, Please try again")
+                        
+                        start_date, parsed_start_date = get_start_date(today, lower_bound_date)
+
+                        end_date = get_end_date(today, parsed_start_date)
+
+                        interval = get_interval()
+                    else:
+                        break
                 else:
                     break
 
@@ -317,8 +311,13 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
     filename = get_filename(interval)
 
     if Path(filename).exists():
-        # Load CSV and ensure data is ordered by Ticker (grouped) and Date (chronological)
-        compiled_history = load_from_csv(filename).sort_values(by=["Ticker", "Date"])
+        try:
+            # Load CSV and ensure data is ordered by Ticker (grouped) and Date (chronological)
+            compiled_history = load_from_csv(filename).sort_values(by=["Ticker", "Date"])
+        except pd.errors.ParserError as e:
+            print(f"\n⚠️  Could not load {filename}, File may be corrupted: {e}")
+        except PermissionError as e:
+            print(f"\n⚠️  Could not read {filename}, Check file permissions: {e}")
 
         present_tickers = []
         missing_tickers = []
@@ -338,7 +337,12 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
             internal_gaps = get_internal_missing_ranges(ticker_specific_dataframe, start, end, interval)
             ticker_object = yf.Ticker(ticker)
             for gap_start, gap_end in internal_gaps:
-                history = ticker_object.history(start=gap_start, end=gap_end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
+                try:
+                    history = ticker_object.history(start=gap_start, end=gap_end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
+                except Exception as e:
+                    print(f"\n⚠️  Error fetching data for {ticker}: {e}")
+                    history = pd.DataFrame()
+
                 history["Ticker"] = ticker
 
                 # For intraday intervals Yahoo returns "Datetime" instead of "Date" → normalise column name
@@ -358,7 +362,12 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
             else:
                 if start < ticker_specific_dataframe["Date"].min() < end:
                     ticker_object = yf.Ticker(ticker)
-                    history = ticker_object.history(start=start, end=ticker_specific_dataframe["Date"].min(), interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
+                    try:
+                        history = ticker_object.history(start=start, end=ticker_specific_dataframe["Date"].min(), interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
+                    except Exception as e:
+                        print(f"\n⚠️  Error fetching data for {ticker}: {e}")
+                        history = pd.DataFrame()
+
                     history["Ticker"] = ticker
 
                     # For intraday intervals Yahoo returns "Datetime" instead of "Date" → normalise column name
@@ -373,7 +382,12 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
 
                 if end > ticker_specific_dataframe["Date"].max() > start:
                     ticker_object = yf.Ticker(ticker)
-                    history = ticker_object.history(start=ticker_specific_dataframe["Date"].max(), end=end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
+                    try:
+                        history = ticker_object.history(start=ticker_specific_dataframe["Date"].max(), end=end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
+                    except Exception as e:
+                        print(f"\n⚠️  Error fetching data for {ticker}: {e}")
+                        history = pd.DataFrame()
+
                     history["Ticker"] = ticker
 
                     # For intraday intervals Yahoo returns "Datetime" instead of "Date" → normalise column name
@@ -390,7 +404,12 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
                 
         for ticker in missing_tickers:
             ticker_object = yf.Ticker(ticker)
-            history = ticker_object.history(start=start, end=end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
+            try:
+                history = ticker_object.history(start=start, end=end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
+            except Exception as e:
+                print(f"\n⚠️  Error fetching data for {ticker}: {e}")
+                history = pd.DataFrame()
+
             history["Ticker"] = ticker
 
             # For intraday intervals Yahoo returns "Datetime" instead of "Date" → normalise column name
@@ -409,7 +428,12 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
         # inplace=True updates compiled_history directly without creating a new DataFrame
         compiled_history.drop_duplicates(subset=["Date", "Ticker"], inplace=True)
         compiled_history.sort_values(by=["Ticker", "Date"], inplace=True)
-        save_to_csv(compiled_history, filename)
+        try:
+            save_to_csv(compiled_history, filename)
+        except PermissionError as e:
+            print(f"\n⚠️  Could not write to {filename}, Check file permissions: {e}")
+        except OSError as e:
+            print(f"\n⚠️  OS error while saving {filename}: {e}")
 
         if interval == "1d":
             master_history = compiled_history
@@ -423,7 +447,7 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
                 "High": "float64",
                 "Low": "float64",
                 "Close": "float64",
-                "Volume": "int64",
+                "Volume": "Int64",
                 "Ticker": "string"
             })
 
@@ -441,13 +465,18 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
             "High": "float64",
             "Low": "float64",
             "Close": "float64",
-            "Volume": "int64",
+            "Volume": "Int64",
             "Ticker": "string"
         })
 
         for ticker in list_of_tickers:
             ticker_object = yf.Ticker(ticker)
-            history = ticker_object.history(start=start, end=end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
+            try:
+                history = ticker_object.history(start=start, end=end, interval=interval).reset_index().drop(["Dividends", "Stock Splits", "Adj Close"], axis="columns", errors="ignore")
+            except Exception as e:
+                print(f"\n⚠️  Error fetching data for {ticker}: {e}")
+                history = pd.DataFrame()
+
             history["Ticker"] = ticker
 
             # For intraday intervals Yahoo returns "Datetime" instead of "Date" → normalise column name
@@ -462,7 +491,12 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
         
         compiled_history.drop_duplicates(subset=["Date", "Ticker"], inplace=True)
         compiled_history.sort_values(by=["Ticker", "Date"], inplace=True)
-        save_to_csv(compiled_history, filename)
+        try:
+            save_to_csv(compiled_history, filename)
+        except PermissionError as e:
+            print(f"\n⚠️  Could not write to {filename}, Check file permissions: {e}")
+        except OSError as e:
+            print(f"\n⚠️  OS error while saving {filename}: {e}")
 
         if interval == "1d":
             master_history = compiled_history
@@ -473,176 +507,15 @@ def fetch_historical_data(list_of_tickers, start, end, interval, verbose=False):
 def fetch_live_price(list_of_tickers):
     print(f"\nLive Prices of Tickers:\n")
     for ticker in list_of_tickers:
-        current_ticker = yf.Ticker(ticker)
-        print(f"{ticker} current price = ${current_ticker.fast_info['lastPrice']:.2f}")
-
-def get_requested_range_dataframe(ticker, days_range):
-    global master_history
-    
-    if ticker in master_history["Ticker"].values:
-        ticker_specific_dataframe = master_history[master_history["Ticker"] == ticker]
-
-        if len(ticker_specific_dataframe) < days_range:
-            print(f"\n⚠️  Only {len(ticker_specific_dataframe)} trading days available for {ticker}"
-                  f"\nAdjusting requested range from {days_range} → {len(ticker_specific_dataframe)}")
-            days_range = len(ticker_specific_dataframe)
-
-        today = datetime.now().date()
-        # Forcing the date
-        # today = datetime(2025, 9, 21).date()
-        nyse = mcal.get_calendar("NYSE")
-        trading_schedule = nyse.schedule(start_date=today, end_date=today)
-
-        utc_time = datetime.now(tz=ZoneInfo("UTC"))
-        eastern_time = utc_time.astimezone(ZoneInfo("America/New_York")).time()
-        market_close_time = time(hour=16, minute=0, second=0)
-
-        # Forcing the ET time
-        # eastern_time = time(hour=19, minute=0, second=0)
-
-        # Today is a trading day and the market has closed for today
-        if today in trading_schedule.index.date and eastern_time >= market_close_time:
-            list_of_valid_trading_days = []
-            list_of_actual_trading_days = []
-
-            # Get all valid trading days up to and including today if it's a trading day
-            # NOTE: valid_trading_days only goes back 90 days (adjust if longer lookback is needed)
-            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=today)
-
-            # Append the last N trading days starting from the most recent (working backwards)
-            for i in range(days_range):
-                list_of_valid_trading_days.append(valid_trading_days[-1 - i].date())
-                # print(valid_trading_days[-1 - i].date())
-
-            # Collect the last N dates actually present in the CSV for this ticker (most recent first)
-            for i in range(days_range):
-                day = pd.to_datetime(ticker_specific_dataframe["Date"].iloc[-1 - i]).date()
-                list_of_actual_trading_days.append(day)
-
-            # Check if the last N valid trading days match exactly the last N dates in the CSV
-            if list_of_valid_trading_days == list_of_actual_trading_days:
-                print("Data matches, can use straight away")
-                pass
+        try:
+            current_ticker = yf.Ticker(ticker)
+            last_price = current_ticker.fast_info.get("lastPrice")
+            if last_price is not None:
+                print(f"{ticker} current price = ${last_price:.2f}")
             else:
-                print("Data needs to be fetched")
-                # Fetch historical data for this ticker because the CSV is missing some dates
-                # Start date:
-                #   - list_of_valid_trading_days[-1] gives the oldest date in our last N valid trading days
-                #   - valid trading days are stored in reverse chronological order (most recent first)
-                # End date:
-                #   - fetch_historical_data treats start date as inclusive, end date as exclusive
-                #   - today + pd.Timedelta(days=1) ensures that today’s row (most recent trading day) is included in the fetch
-                fetch_historical_data([ticker], list_of_valid_trading_days[-1].strftime("%Y-%m-%d"), (today + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
-
-        # Today is a trading day and the market is still open or waiting to open
-        elif today in trading_schedule.index.date and eastern_time < market_close_time:
-            list_of_valid_trading_days = []
-            list_of_actual_trading_days = []
-
-            # Get all valid trading days up to yesterday
-            # Exclude today because the market is still open; the last valid trading day is yesterday
-            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=(today - pd.Timedelta(days=1)))
-
-            # Append the last N trading days starting from the most recent (working backwards)
-            # Because we have excluded today from valid_trading_days, valid_trading_days[-1] would be yesterday
-            for i in range(days_range):
-                list_of_valid_trading_days.append(valid_trading_days[-1 - i].date())
-                # print(valid_trading_days[-1 - i].date())
-                # print()
-
-            # Collect the last N dates actually present in the CSV for this ticker (most recent first)
-            for i in range(days_range):
-                day = pd.to_datetime(ticker_specific_dataframe["Date"].iloc[-1 - i]).date()
-                list_of_actual_trading_days.append(day)
-                # print(day)
-
-            # Check if the last N valid trading days match exactly the last N dates in the CSV
-            if list_of_valid_trading_days == list_of_actual_trading_days:
-                print("Data matches, can use straight away")
-                pass
-            else:
-                print("Data needs to be fetched")
-                # Fetch historical data for this ticker because the CSV is missing some dates
-                # Start date:
-                #   - list_of_valid_trading_days[-1] gives the oldest date in our last N valid trading days
-                # End date:
-                #   - fetch_historical_data treats start date as inclusive, end date as exclusive
-                #   - valid_trading_days ends at yesterday since the market is still open 
-                #   - using today as the end date ensures yesterday’s data is included, while today itself is excluded
-                fetch_historical_data([ticker], list_of_valid_trading_days[-1].strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), "1d")
-
-        # Today is not a trading day (weekend/holiday)
-        else:
-            list_of_valid_trading_days = []
-            list_of_actual_trading_days = []
-
-            # Get all valid trading days up to today
-            # If today is not a trading day, valid_trading_days[-1] gives the most recent trading day before today
-            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=today)
-            most_recent_trading_day = valid_trading_days[-1].date()
-            # print(most_recent_trading_day)
-
-            # Append the last N trading days starting from the most recent (working backwards)
-            for i in range(days_range):
-                list_of_valid_trading_days.append(valid_trading_days[-1 - i].date())
-                # print(valid_trading_days[-1 - i].date())
-
-            # Collect the last N dates actually present in the CSV for this ticker (most recent first)
-            for i in range(days_range):
-                day = pd.to_datetime(ticker_specific_dataframe["Date"].iloc[-1 - i]).date()
-                list_of_actual_trading_days.append(day)
-
-            # Check if the last N valid trading days match exactly the last N dates in the CSV
-            if list_of_valid_trading_days == list_of_actual_trading_days:
-                print("Data matches, can use straight away")
-                pass
-            else:
-                # Fetch historical data for this ticker because the CSV is missing some dates
-                # Start date:
-                #   - list_of_valid_trading_days[-1] gives the oldest date in our last N valid trading days
-                # End date: most recent trading day (e.g., Friday if today is Sunday) + 1 day
-                #   - +1 ensures the most recent trading day is included because start is inclusive and end is exclusive
-                print("Data needs to be fetched")
-                fetch_historical_data([ticker], list_of_valid_trading_days[-1].strftime("%Y-%m-%d"), (most_recent_trading_day + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
-    else:
-        print(f"{ticker} does not exist in the dataframe")
-
-        today = datetime.now().date()
-        nyse = mcal.get_calendar("NYSE")
-        trading_schedule = nyse.schedule(start_date=today, end_date=today)
-
-        utc_time = datetime.now(tz=ZoneInfo("UTC"))
-        eastern_time = utc_time.astimezone(ZoneInfo("America/New_York")).time()
-        market_close_time = time(hour=16, minute=0, second=0)
-        
-        # Today is a trading day and the market has closed for today
-        if today in trading_schedule.index.date and eastern_time >= market_close_time:
-            # Get all valid trading days up to and including today if it's a trading day
-            # NOTE: valid_trading_days only goes back 90 days (adjust if longer lookback is needed)
-            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=today)
-            # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
-            # End date: today + 1 day → ensures today’s trading data is included 
-            fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), (today + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
-
-        # Today is a trading day and the market is still open or waiting to open
-        elif today in trading_schedule.index.date and eastern_time < market_close_time:
-            # Get all valid trading days up to yesterday
-            # Exclude today because the market is still open; the last valid trading day is yesterday
-            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=(today - pd.Timedelta(days=1)))
-            # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
-            # End date: today → excludes today (market still open), but includes yesterday’s data
-            fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), "1d")
-
-        # Today is not a trading day (weekend/holiday)
-        else:
-            # Get all valid trading days up to "today" (if today is not a trading day, this will automatically stop at the most recent valid trading day, e.g. Friday if it's the weekend)
-            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=today)
-            most_recent_trading_day = valid_trading_days[-1].date()
-            # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
-            # End date = most recent trading day + 1 day (exclusive) → ensures the most recent trading day itself is included
-            fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), (most_recent_trading_day + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
-
-    return master_history[master_history["Ticker"] == ticker].tail(days_range), valid_trading_days, days_range
+                print(f"\n⚠️  {ticker}: Price data not available")
+        except Exception as e:
+            print(f"\n⚠️  Error fetching live price for {ticker}: {e}")
  
 def analyse_stock_data(ticker, days_range):
     requested_range_dataframe, valid_trading_days, days_range = get_requested_range_dataframe(ticker, days_range)
@@ -966,6 +839,217 @@ def get_internal_missing_ranges(dataframe, start, end, interval):
 
     return gaps
 
+def get_requested_range_dataframe(ticker, days_range):
+    global master_history
+    
+    if ticker in master_history["Ticker"].values:
+        ticker_specific_dataframe = master_history[master_history["Ticker"] == ticker]
+
+        if len(ticker_specific_dataframe) < days_range:
+            print(f"\n⚠️  Only {len(ticker_specific_dataframe)} trading days available for {ticker}"
+                  f"\nAdjusting requested range from {days_range} → {len(ticker_specific_dataframe)}")
+            days_range = len(ticker_specific_dataframe)
+
+        today = datetime.now().date()
+        # Forcing the date
+        # today = datetime(2025, 9, 21).date()
+        nyse = mcal.get_calendar("NYSE")
+        trading_schedule = nyse.schedule(start_date=today, end_date=today)
+
+        utc_time = datetime.now(tz=ZoneInfo("UTC"))
+        eastern_time = utc_time.astimezone(ZoneInfo("America/New_York")).time()
+        market_close_time = time(hour=16, minute=0, second=0)
+
+        # Forcing the ET time
+        # eastern_time = time(hour=14, minute=0, second=0)
+
+        # Today is a trading day and the market has closed for today
+        if today in trading_schedule.index.date and eastern_time >= market_close_time:
+            list_of_valid_trading_days = []
+            list_of_actual_trading_days = []
+
+            # Get all valid trading days up to and including today if it's a trading day
+            # NOTE: valid_trading_days only goes back 90 days (adjust if longer lookback is needed)
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=today)
+
+            # Append the last N trading days starting from the most recent (working backwards)
+            for i in range(days_range):
+                list_of_valid_trading_days.append(valid_trading_days[-1 - i].date())
+                # print(valid_trading_days[-1 - i].date())
+
+            # Collect the last N dates actually present in the CSV for this ticker (most recent first)
+            for i in range(days_range):
+                day = pd.to_datetime(ticker_specific_dataframe["Date"].iloc[-1 - i]).date()
+                list_of_actual_trading_days.append(day)
+
+            # Check if the last N valid trading days match exactly the last N dates in the CSV
+            if list_of_valid_trading_days == list_of_actual_trading_days:
+                print("Data matches, can use straight away")
+                pass
+            else:
+                print("Data needs to be fetched")
+                # Fetch historical data for this ticker because the CSV is missing some dates
+                # Start date:
+                #   - list_of_valid_trading_days[-1] gives the oldest date in our last N valid trading days
+                #   - valid trading days are stored in reverse chronological order (most recent first)
+                # End date:
+                #   - fetch_historical_data treats start date as inclusive, end date as exclusive
+                #   - today + pd.Timedelta(days=1) ensures that today’s row (most recent trading day) is included in the fetch
+                fetch_historical_data([ticker], list_of_valid_trading_days[-1].strftime("%Y-%m-%d"), (today + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
+
+        # Today is a trading day and the market is still open or waiting to open
+        elif today in trading_schedule.index.date and eastern_time < market_close_time:
+            list_of_valid_trading_days = []
+            list_of_actual_trading_days = []
+
+            # Get all valid trading days up to yesterday
+            # Exclude today because the market is still open; the last valid trading day is yesterday
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=(today - pd.Timedelta(days=1)))
+
+            # Append the last N trading days starting from the most recent (working backwards)
+            # Because we have excluded today from valid_trading_days, valid_trading_days[-1] would be yesterday
+            for i in range(days_range):
+                list_of_valid_trading_days.append(valid_trading_days[-1 - i].date())
+                # print(valid_trading_days[-1 - i].date())
+                # print()
+
+            # Collect the last N dates actually present in the CSV for this ticker (most recent first)
+            for i in range(days_range):
+                day = pd.to_datetime(ticker_specific_dataframe["Date"].iloc[-1 - i]).date()
+                list_of_actual_trading_days.append(day)
+                # print(day)
+
+            # Check if the last N valid trading days match exactly the last N dates in the CSV
+            if list_of_valid_trading_days == list_of_actual_trading_days:
+                print("Data matches, can use straight away")
+                pass
+            else:
+                print("Data needs to be fetched")
+                # Fetch historical data for this ticker because the CSV is missing some dates
+                # Start date:
+                #   - list_of_valid_trading_days[-1] gives the oldest date in our last N valid trading days
+                # End date:
+                #   - fetch_historical_data treats start date as inclusive, end date as exclusive
+                #   - valid_trading_days ends at yesterday since the market is still open 
+                #   - using today as the end date ensures yesterday’s data is included, while today itself is excluded
+                fetch_historical_data([ticker], list_of_valid_trading_days[-1].strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), "1d")
+
+        # Today is not a trading day (weekend/holiday)
+        else:
+            list_of_valid_trading_days = []
+            list_of_actual_trading_days = []
+
+            # Get all valid trading days up to today
+            # If today is not a trading day, valid_trading_days[-1] gives the most recent trading day before today
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=today)
+            most_recent_trading_day = valid_trading_days[-1].date()
+            # print(most_recent_trading_day)
+
+            # Append the last N trading days starting from the most recent (working backwards)
+            for i in range(days_range):
+                list_of_valid_trading_days.append(valid_trading_days[-1 - i].date())
+                # print(valid_trading_days[-1 - i].date())
+
+            # Collect the last N dates actually present in the CSV for this ticker (most recent first)
+            for i in range(days_range):
+                day = pd.to_datetime(ticker_specific_dataframe["Date"].iloc[-1 - i]).date()
+                list_of_actual_trading_days.append(day)
+
+            # Check if the last N valid trading days match exactly the last N dates in the CSV
+            if list_of_valid_trading_days == list_of_actual_trading_days:
+                print("Data matches, can use straight away")
+                pass
+            else:
+                # Fetch historical data for this ticker because the CSV is missing some dates
+                # Start date:
+                #   - list_of_valid_trading_days[-1] gives the oldest date in our last N valid trading days
+                # End date: most recent trading day (e.g., Friday if today is Sunday) + 1 day
+                #   - +1 ensures the most recent trading day is included because start is inclusive and end is exclusive
+                print("Data needs to be fetched")
+                fetch_historical_data([ticker], list_of_valid_trading_days[-1].strftime("%Y-%m-%d"), (most_recent_trading_day + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
+    else:
+        print(f"{ticker} does not exist in the dataframe")
+
+        today = datetime.now().date()
+        nyse = mcal.get_calendar("NYSE")
+        trading_schedule = nyse.schedule(start_date=today, end_date=today)
+
+        utc_time = datetime.now(tz=ZoneInfo("UTC"))
+        eastern_time = utc_time.astimezone(ZoneInfo("America/New_York")).time()
+        market_close_time = time(hour=16, minute=0, second=0)
+        
+        # Today is a trading day and the market has closed for today
+        if today in trading_schedule.index.date and eastern_time >= market_close_time:
+            # Get all valid trading days up to and including today if it's a trading day
+            # NOTE: valid_trading_days only goes back 90 days (adjust if longer lookback is needed)
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=today)
+            # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
+            # End date: today + 1 day → ensures today’s trading data is included 
+            fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), (today + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
+
+        # Today is a trading day and the market is still open or waiting to open
+        elif today in trading_schedule.index.date and eastern_time < market_close_time:
+            # Get all valid trading days up to yesterday
+            # Exclude today because the market is still open; the last valid trading day is yesterday
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=(today - pd.Timedelta(days=1)))
+            # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
+            # End date: today → excludes today (market still open), but includes yesterday’s data
+            fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), "1d")
+
+        # Today is not a trading day (weekend/holiday)
+        else:
+            # Get all valid trading days up to "today" (if today is not a trading day, this will automatically stop at the most recent valid trading day, e.g. Friday if it's the weekend)
+            valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=180), end_date=today)
+            most_recent_trading_day = valid_trading_days[-1].date()
+            # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
+            # End date = most recent trading day + 1 day (exclusive) → ensures the most recent trading day itself is included
+            fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), (most_recent_trading_day + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
+
+    return master_history[master_history["Ticker"] == ticker].tail(days_range), valid_trading_days, days_range
+
+def get_start_date(today, lower_bound_date):
+    while True:
+        try:
+            start_date = input(f"\nEnter a start date (inclusive) [YYYY-MM-DD]: ")
+            parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+            if parsed_start_date < lower_bound_date:
+                raise ValueError(f"Start date cannot be eariler than {lower_bound_date}")
+            if parsed_start_date > today: 
+                raise ValueError("Start date must not be a future date, Please try again")
+        except ValueError as e:
+            print(e)
+        else:
+            return start_date, parsed_start_date
+
+def get_end_date(today, parsed_start_date):
+    while True:
+        try:
+            end_date = input(f"\nEnter an end date (exclusive) [YYYY-MM-DD]: ")
+            parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+            if parsed_end_date <= parsed_start_date:
+                raise ValueError("End date must be after start date, Please try again")
+            if parsed_end_date > today + pd.Timedelta(days=1):
+                raise ValueError("End date must not be in a future date, Please try again")
+        except ValueError as e:
+            print(e)
+        else:
+            return end_date
+
+def get_interval():
+    print(f"\nValid intervals:")
+    for key in INTERVAL_TO_TIMEDIFF:
+        print(key, end=", ")
+    print() # Readability purposes
+    while True:
+        try:
+            interval = input(f"\nEnter an interval: ").strip().lower()
+            if interval not in INTERVAL_TO_TIMEDIFF.keys():
+                raise ValueError("Invalid interval entered, Please try again")
+        except ValueError as e:
+            print(e)
+        else:
+            return interval
+
 def validated_ticker():
     while True:
         try:
@@ -978,7 +1062,7 @@ def validated_ticker():
             print(e)
         except Exception as e:
             # Something else went wrong (network down, API error, etc.)
-            print(f"Unexpected error: {e}")
+            print(f"\n⚠️  Unexpected error: {e}")
         else:
             return ticker
         
