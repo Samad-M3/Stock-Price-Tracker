@@ -1,5 +1,5 @@
 import json
-from main import percentage_change_alert
+from main import StockTracker
 
 try:
     data = None
@@ -11,7 +11,9 @@ try:
     threshold_value = data["threshold"]
     recipient_email = data["recipient_email"]
 
-    percentage_change_alert(list_of_tickers, threshold_value, recipient_email, verbose=False)
+    tracker = StockTracker()
+    tracker.percentage_change_alert(list_of_tickers, threshold_value, recipient_email, verbose=False)
+    
 except FileNotFoundError:
     print(f"\n⚠️  Error: **alert_config.json** not found")
 except json.JSONDecodeError:
