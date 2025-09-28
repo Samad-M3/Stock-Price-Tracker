@@ -73,7 +73,7 @@ class StockTracker:
             except PermissionError as e:
                 print(f"\n⚠️  Could not read {StockTracker.MASTER_FILENAME}, Check file permissions: {e}")
         else:
-            print("Dataframe for '1d' interval doesn't exist, Fetch some data first")
+            print(f"\n⚠️  Friendly Warning: No **1d** data available yet, Fetch historical data first — until then, option 3 and 4 won't work")
 
     def main_menu(self):
         """
@@ -245,9 +245,9 @@ class StockTracker:
                         try:
                             investment_amount = int(input(f"Enter how much you would like to invest: "))
                             if investment_amount < 1:
-                                raise ValueError(f"Invalid amount, Please enter a positive amount\n")
+                                raise ValueError(f"Invalid amount, Please enter a positive amount")
                         except ValueError as e:
-                            print(e)
+                            print(f"{e}\n")
                         else:
                             break
 
@@ -1185,7 +1185,6 @@ class StockTracker:
                 # Append the last N trading days starting from the most recent (working backwards)
                 for i in range(days_range):
                     list_of_valid_trading_days.append(valid_trading_days[-1 - i].date())
-                    # print(valid_trading_days[-1 - i].date())
 
                 # Collect the last N dates actually present in the CSV for this ticker (most recent first)
                 for i in range(days_range):
@@ -1194,10 +1193,8 @@ class StockTracker:
 
                 # Check if the last N valid trading days match exactly the last N dates in the CSV
                 if list_of_valid_trading_days == list_of_actual_trading_days:
-                    print("Data matches, can use straight away")
                     pass
                 else:
-                    print("Data needs to be fetched")
                     # Fetch historical data for this ticker because the CSV is missing some dates
                     # Start date:
                     #   - list_of_valid_trading_days[-1] gives the oldest date in our last N valid trading days
@@ -1220,21 +1217,16 @@ class StockTracker:
                 # Because we have excluded today from valid_trading_days, valid_trading_days[-1] would be yesterday
                 for i in range(days_range):
                     list_of_valid_trading_days.append(valid_trading_days[-1 - i].date())
-                    # print(valid_trading_days[-1 - i].date())
-                    # print()
 
                 # Collect the last N dates actually present in the CSV for this ticker (most recent first)
                 for i in range(days_range):
                     day = pd.to_datetime(ticker_specific_dataframe["Date"].iloc[-1 - i]).date()
                     list_of_actual_trading_days.append(day)
-                    # print(day)
 
                 # Check if the last N valid trading days match exactly the last N dates in the CSV
                 if list_of_valid_trading_days == list_of_actual_trading_days:
-                    print("Data matches, can use straight away")
                     pass
                 else:
-                    print("Data needs to be fetched")
                     # Fetch historical data for this ticker because the CSV is missing some dates
                     # Start date:
                     #   - list_of_valid_trading_days[-1] gives the oldest date in our last N valid trading days
@@ -1253,12 +1245,10 @@ class StockTracker:
                 # If today is not a trading day, valid_trading_days[-1] gives the most recent trading day before today
                 valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=StockTracker.MAX_LOOKBACK_DAYS), end_date=today)
                 most_recent_trading_day = valid_trading_days[-1].date()
-                # print(most_recent_trading_day)
 
                 # Append the last N trading days starting from the most recent (working backwards)
                 for i in range(days_range):
                     list_of_valid_trading_days.append(valid_trading_days[-1 - i].date())
-                    # print(valid_trading_days[-1 - i].date())
 
                 # Collect the last N dates actually present in the CSV for this ticker (most recent first)
                 for i in range(days_range):
@@ -1267,7 +1257,6 @@ class StockTracker:
 
                 # Check if the last N valid trading days match exactly the last N dates in the CSV
                 if list_of_valid_trading_days == list_of_actual_trading_days:
-                    print("Data matches, can use straight away")
                     pass
                 else:
                     # Fetch historical data for this ticker because the CSV is missing some dates
@@ -1275,11 +1264,8 @@ class StockTracker:
                     #   - list_of_valid_trading_days[-1] gives the oldest date in our last N valid trading days
                     # End date: most recent trading day (e.g., Friday if today is Sunday) + 1 day
                     #   - +1 ensures the most recent trading day is included because start is inclusive and end is exclusive
-                    print("Data needs to be fetched")
                     self.fetch_historical_data([ticker], list_of_valid_trading_days[-1].strftime("%Y-%m-%d"), (most_recent_trading_day + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
         else:
-            print(f"{ticker} does not exist in the dataframe")
-            
             # Today is a trading day and the market has closed for today
             if today in trading_schedule.index.date and eastern_time >= market_close_time:
                 # Get all valid trading days up to and including today if it's a trading day
@@ -1397,7 +1383,6 @@ class StockTracker:
 
         print(f"\nValid intervals:")
         print(", ".join(StockTracker.INTERVAL_TO_TIMEDIFF.keys()))
-        print() # Readability purposes
         while True:
             try:
                 interval = input(f"\nEnter an interval: ").strip().lower()
@@ -1477,9 +1462,9 @@ class StockTracker:
 
         while True:
             try:
-                days_back = int(input(f"Enter how far you would like to go back (measured in days) [Max lookback 180 days]: "))
+                days_back = int(input(f"Enter how far you would like to go back (measured in days) [Max lookback {StockTracker.MAX_LOOKBACK_DAYS} days]: "))
                 if days_back > StockTracker.MAX_LOOKBACK_DAYS or days_back < min_look_back:
-                    raise ValueError(f"Invalid lookback period, Please enter a value between {min_look_back} and 180 days\n")
+                    raise ValueError(f"Invalid lookback period, Please enter a value between {min_look_back} and {StockTracker.MAX_LOOKBACK_DAYS} days\n")
             except ValueError as e:
                 print(e)
             else:
