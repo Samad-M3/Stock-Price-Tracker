@@ -1,3 +1,11 @@
+"""
+Daily alert runner script for Stock Price Tracker.
+
+This script reads the configuration from `alert_config.json` and triggers
+the daily percentage change email alerts for the specified stock tickers.
+It is intended to be run automatically via Windows Task Scheduler at 9:10 PM.
+"""
+
 import json
 from main import StockTracker
 

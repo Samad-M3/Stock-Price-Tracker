@@ -1,3 +1,10 @@
+"""
+Stock Price Tracker CLI application.
+
+Tracks historical and live stock data, generates analytics and visualisations,
+and sends email alerts on percentage changes.
+"""
+
 import yfinance as yf
 import pandas as pd
 import seaborn as sns
@@ -15,6 +22,22 @@ from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
 class StockTracker:
+    """
+    The core engine for tracking and analysing stock data.
+
+    This class manages historical data efficiently by fetching only the
+    missing records from the API, avoiding redundant requests and persisting
+    results to CSV files. It supports multiple intervals, including intraday
+    and daily/longer ranges.
+
+    Analytics and chart generation are provided for daily data, offering
+    insights such as percentage changes, highs, lows, and average volumes.
+
+    It also supports configuring percentage change alerts, allowing users to
+    set thresholds, specify tickers, and define recipients for email
+    notifications. Alerts can be delivered both via email and through
+    console output.
+    """
 
     COLUMN_NAMES = ["Date", "Open", "High", "Low", "Close", "Volume", "Ticker"]
     MAX_LOOKBACK_DAYS = 180
@@ -37,6 +60,11 @@ class StockTracker:
     MASTER_FILENAME = "data/historical_data_1d.csv"
 
     def __init__(self):
+        """ 
+        Initialises the tracker by loading the master daily history file 
+        if it exists. Otherwise, informs the user that no daily data is available.
+        """
+
         if Path(StockTracker.MASTER_FILENAME).exists():
             try:
                 StockTracker.MASTER_HISTORY = self.load_from_csv(StockTracker.MASTER_FILENAME).sort_values(by=["Ticker", "Date"])
@@ -48,6 +76,14 @@ class StockTracker:
             print("Dataframe for '1d' interval doesn't exist, Fetch some data first")
 
     def main_menu(self):
+        """
+        Displays the main menu and handles user interaction.
+
+        Provides options to fetch historical data, fetch live prices, 
+        analyse stock data, generate visualisations, or configure alerts. 
+        Some options prompt for further user input or lead to sub-menus.
+        """
+
         today = datetime.now().date()
         lower_bound_date = datetime(1950, 1, 1).date()
 
@@ -144,6 +180,14 @@ class StockTracker:
                 self.exit_program()
     
     def chart_selection_menu(self):
+        """
+        Displays the chart selection menu and handles user interaction.
+
+        Allows users to generate different stock visualisations such as 
+        percentage changes, volume trends, moving averages, high-low ranges, 
+        and cumulative returns.
+        """
+
         while True:
             while True:
                 try:
@@ -215,6 +259,11 @@ class StockTracker:
                 break
 
     def email_alert_menu(self):
+        """
+        Displays the email alert menu and handles user interaction.
+        Allows users to configure alert settings or test alerts.
+        """
+
         while True:
             while True:
                 try:
@@ -292,6 +341,29 @@ class StockTracker:
                 break
 
     def fetch_historical_data(self, list_of_tickers, start, end, interval, verbose=False):
+        """
+        Fetches historical stock data for a list of tickers and updates the local CSV cache.
+
+        Parameters
+        ----------
+        list_of_tickers : list of str
+            The tickers to retrieve data for.
+        start : str
+            The start of the date range (inclusive).
+        end : str
+            The end of the date range (exclusive).
+        interval : str
+            The data interval/granularity (e.g., '1d', '1m', '5m').
+        verbose : bool, default False
+            If True, prints the resulting data to the console.
+
+        Notes
+        -----
+        If a CSV file for the interval exists, only missing data is fetched from the API.
+        If the file does not exist, all requested data is fetched from the API. 
+        The local CSV is updated after data retrieval to maintain a cache.
+        """
+
         # Convert string to datetime (defaults to naive/no timezone)
         start = pd.to_datetime(start)
         # If naive (no timezone), attach New York timezone
@@ -507,6 +579,15 @@ class StockTracker:
 
     @staticmethod
     def fetch_live_price(list_of_tickers):
+        """
+        Fetches and displays the live prices of the given stock tickers.
+
+        Parameters
+        ----------
+        list_of_tickers : list of str
+            The tickers to fetch live prices for.
+        """
+
         print(f"\nLive Prices of Tickers:\n")
         for ticker in list_of_tickers:
             try:
@@ -520,11 +601,23 @@ class StockTracker:
                 print(f"\n⚠️  Error fetching live price for {ticker}: {e}")
  
     def analyse_stock_data(self, ticker, days_range):
+        """
+        Analyses the past N trading days of a stock and prints key statistics.
+
+        Calculates daily percentage change, highest high, lowest low, average closing 
+        price, average volume, and overall percentage change across the range.
+
+        Parameters
+        ----------
+        ticker : str
+            The stock ticker symbol to analyse (e.g., "AAPL").
+        days_range : int
+            Number of past trading days to analyse from today. Maximum allowed is 180 days.
+        """
+
         requested_range_dataframe, valid_trading_days, days_range = self.get_requested_range_dataframe(ticker, days_range)
 
-        """
-        Calculations
-        """
+        # Calculations
 
         new_close = requested_range_dataframe["Close"].iloc[-1]
         old_close = requested_range_dataframe["Close"].iloc[-2]
@@ -538,9 +631,7 @@ class StockTracker:
         avg_volume = round(requested_range_dataframe["Volume"].mean())
         range_percentage_change = ((new_close - first_close) / first_close) * 100 # % change in closing price across the entire range (first → last day)
 
-        """
-        Printing out the stats
-        """
+        # Printing out the stats
 
         print(f"\n{ticker} Stock Analysis (Past {days_range} Trading Days: {valid_trading_days[-days_range].date()} → {valid_trading_days[-1].date()})")
 
@@ -552,6 +643,22 @@ class StockTracker:
         print(f"% Change Over Range: {range_percentage_change:+.2f}%")
 
     def generate_daily_percentage_change_chart(self, ticker, days_range):
+        """
+        Generates a bar chart of daily percentage changes for a stock.
+
+        Calculates the daily percentage change in closing price for the past N trading 
+        days and visualises it as a bar chart. Positive changes are shown in green, 
+        negative changes in red. Note that the first trading day is dropped from the 
+        chart because there is no previous day to calculate a change from.
+
+        Parameters
+        ----------
+        ticker : str
+            The stock ticker symbol to generate the chart for.
+        days_range : int
+            Number of past trading days to include from today. Maximum allowed is 180 days.
+        """
+
         requested_range_dataframe, valid_trading_days, days_range = self.get_requested_range_dataframe(ticker, days_range)
 
         requested_range_dataframe["% daily change"] = requested_range_dataframe["Close"].pct_change() * 100
@@ -584,6 +691,18 @@ class StockTracker:
         plt.show()
 
     def generate_volume_over_time_chart(self, ticker, days_range):
+        """
+        Generates a bar chart of daily trading volume for a stock.
+        Displays the number of shares traded each day over the past N trading days.
+
+        Parameters
+        ----------
+        ticker : str
+            The stock ticker symbol to generate the chart for.
+        days_range : int
+            Number of past trading days to include from today. Maximum allowed is 180 days.
+        """
+
         requested_range_dataframe, valid_trading_days, days_range = self.get_requested_range_dataframe(ticker, days_range)
 
         requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
@@ -599,7 +718,7 @@ class StockTracker:
         plt.title(f"{ticker} - Daily Trading Volume (Last {days_range} Trading Days)")
         plt.xlabel("Date")
         plt.ylabel("Volume")
-        plt.xticks(rotation=45)
+        plt.xticks(rotation=45) 
 
         # Format y-axis in millions for readability
         ax = plt.gca()
@@ -609,6 +728,18 @@ class StockTracker:
         plt.show()
 
     def generate_closing_price_vs_moving_average_chart(self, ticker, days_range):
+        """
+        Generates a line chart of closing price and 5-day moving average for a stock.
+        Displays the stock's closing price alongside its 5-day moving average over the past N trading days.
+
+        Parameters
+        ----------
+        ticker : str
+            The stock ticker symbol to generate the chart for.
+        days_range : int
+            Number of past trading days to include from today. Maximum allowed is 180 days.
+        """
+        
         requested_range_dataframe, valid_trading_days, days_range = self.get_requested_range_dataframe(ticker, days_range)
 
         requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
@@ -637,6 +768,20 @@ class StockTracker:
         plt.show()
 
     def generate_high_low_range_chart(self, ticker, days_range):
+        """
+        Generates an area chart showing the daily high-low price range of a stock.
+
+        Displays the volatility of the stock over the past N trading days by illustrating the difference
+        between each day's high and low prices. Larger values indicate higher intraday price fluctuations.
+
+        Parameters
+        ----------
+        ticker : str
+            The stock ticker symbol to generate the chart for.
+        days_range : int
+            Number of past trading days to include from today. Maximum allowed is 180 days.
+        """
+
         requested_range_dataframe, valid_trading_days, days_range = self.get_requested_range_dataframe(ticker, days_range)
         
         requested_range_dataframe["Shortend Date"] = requested_range_dataframe["Date"].dt.strftime("%d-%m-%Y")
@@ -664,6 +809,23 @@ class StockTracker:
         plt.show()
 
     def generate_cumulative_returns_chart(self, ticker, days_range, investment_amount):
+        """
+        Generates a line chart showing the cumulative returns of a hypothetical investment.
+
+        Models the growth of an initial investment over the past N trading days, assuming the investment
+        is held throughout the period. Illustrates how the investment value would have changed based on
+        daily stock price movements.
+        
+        Parameters
+        ----------
+        ticker : str
+            The stock ticker symbol to generate the chart for.
+        days_range : int
+            Number of past trading days to include from today. Maximum allowed is 180 days.
+        investment_amount : int
+            The initial amount invested at the start of the selected range.
+        """
+        
         requested_range_dataframe, valid_trading_days, days_range = self.get_requested_range_dataframe(ticker, days_range)
 
         requested_range_dataframe["% daily change"] = requested_range_dataframe["Close"].pct_change() # Daily returns as fractional change (e.g., 0.02 = +2%)
@@ -698,6 +860,25 @@ class StockTracker:
         plt.show()
 
     def percentage_change_alert(self, list_of_tickers, alert_threshold, recipient_email, verbose=False):
+        """
+        Generates and emails daily percentage change alerts for a list of stock tickers.
+
+        Based on market status and the specified threshold, the method evaluates the daily
+        percentage change of each ticker at market close and compiles alerts. The behavior
+        differs depending on whether the market is closed, open, or yet to open.
+
+        Parameters
+        ----------
+        list_of_tickers : list of str
+            List of stock ticker symbols to monitor.
+        alert_threshold : float
+            Percentage threshold that determines whether a ticker triggers a rise or drop alert.
+        recipient_email : str
+            Email address to receive the daily alert report.
+        verbose : bool, default False
+            If True, detailed console output is printed during execution.
+        """
+
         today = datetime.now().date()
         nyse = mcal.get_calendar("NYSE")
         trading_schedule = nyse.schedule(start_date=today, end_date=today)
@@ -767,6 +948,22 @@ class StockTracker:
 
     @staticmethod
     def email_alerts(subject, to, body):
+        """
+        Sends an email alert with the specified subject and body to a recipient.
+
+        This helper method constructs and sends an email using Gmail's SMTP server.
+        Authentication credentials are securely retrieved from environment variables.
+
+        Parameters
+        ----------
+        subject : str
+            Subject line of the email.
+        to : str
+            Recipient email address.    
+        body : str
+            Main content of the email.
+        """
+
         # Get email + password from environment variables for security
         EMAIL_ADDRESS = os.environ.get("EMAIL_USER")
         EMAIL_PASSWORD = os.environ.get("EMAIL_PASS")
@@ -792,29 +989,99 @@ class StockTracker:
 
     @staticmethod
     def exit_program():
-        print("Closing program...")
+        """
+        Terminates the program with a closing message.
+        """
+        
+        print(f"\nClosing program...")
         sys.exit(0)
 
     @staticmethod
     def save_to_csv(dataframe, filename):
+        """
+        Save a DataFrame to a CSV file without the index column.
+
+        Parameters
+        ----------
+        dataframe : pandas.DataFrame
+            The DataFrame object to save.
+        filename : str or Path
+            Path or filename where the CSV file will be written.
+        """
+
         dataframe.to_csv(filename, index=False)
 
     @staticmethod
     def load_from_csv(filename):
+        """
+        Load a CSV file into a DataFrame.
+
+        Parameters
+        ----------
+        filename : str or Path
+            Path to the CSV file.
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame with parsed datetime in 'America/New_York' timezone if file exists.
+
+        Notes
+        -----
+        If the file does not exist, a message is printed to the console and no DataFrame is returned.
+        """
+
         if Path(filename).exists():
             df = pd.read_csv(filename)
             # Parse "Date" column as timezone-aware UTC datetimes, then convert to NY time
             df["Date"] = pd.to_datetime(df["Date"], utc=True).dt.tz_convert("America/New_York")
             return df
         else:
-            print("File does not exist")
+            print(f"\nFile does not exist")
 
     @staticmethod
     def get_filename(interval):
+        """
+        Generate a filename for storing historical data based on the interval.
+
+        Parameters
+        ----------
+        interval : str
+            The data interval/granularity (e.g., '1d', '1m', '5m') used to determine the filename.
+        
+        Returns
+        -------
+        str
+            Path to the CSV file corresponding to the given interval.
+        """
+
         return f"data/historical_data_{interval}.csv"
 
     @staticmethod
     def get_internal_missing_ranges(dataframe, start, end, interval):
+        """
+        Identify missing date ranges within the requested interval.
+
+        This method scans the given DataFrame for gaps in the specified
+        date range and returns the missing segments as start-end pairs.
+
+        Parameters
+        ----------
+        dataframe : pandas.DataFrame
+            The dataset to check for gaps.
+        start : datetime-like
+            Start of the requested date range.
+        end : datetime-like
+            End of the requested date range.
+        interval : str
+            The data interval/granularity used to detect gaps.
+
+        Returns
+        -------
+        list of tuple
+            A list of (start, end) pairs representing the missing ranges.
+        """
+
         # Extract only the rows that fall within the requested date range
         requested_range_dataframe  = dataframe[(dataframe["Date"] >= start) & (dataframe["Date"] <= end)].sort_values(by="Date")
 
@@ -849,6 +1116,40 @@ class StockTracker:
         return gaps
 
     def get_requested_range_dataframe(self, ticker, days_range):
+        """
+        Ensure availability of the last N trading days for a given ticker.
+
+        This helper method validates and, if necessary, updates the local 
+        dataset for a ticker to guarantee that the last `days_range` 
+        trading days are present. It accounts for different scenarios 
+        depending on whether today is a trading day, whether the market 
+        is open or closed, or if today is a non-trading day 
+        (e.g., weekend or holiday).
+
+        Missing or outdated data is fetched dynamically using 
+        `fetch_historical_data`, minimising redundant API calls.
+
+        Parameters
+        ----------
+        ticker : str
+            The stock ticker symbol to retrieve data for.
+        days_range : int
+            The number of most recent trading days to include.
+            The maximum lookback is capped (180 days).
+            If fewer rows exist for the ticker, the value is adjusted.
+
+        Returns
+        -------
+        pandas.DataFrame
+            A DataFrame containing the last N trading days of data 
+            for the given ticker, guaranteed to be complete.
+        pandas.DatetimeIndex
+            A sequence of valid NYSE trading days covering the 
+            requested lookback window.
+        days_range : int
+            The final `days_range` used, which may be smaller if 
+            the dataset has fewer available rows.
+        """
 
         today = datetime.now().date()
         nyse = mcal.get_calendar("NYSE")
@@ -1010,6 +1311,28 @@ class StockTracker:
 
     @staticmethod
     def get_start_date(today, lower_bound_date):
+        """
+        Prompt the user to enter a valid start date within defined bounds.
+
+        The method repeatedly requests a date from the user until a valid one 
+        is provided. A date is considered valid if it is not earlier than the 
+        lower bound and not later than today's date.
+
+        Parameters
+        ----------
+        today : datetime.date
+            The current date used as the upper bound for validation.
+        lower_bound_date : datetime.date
+            The earliest permissible start date (e.g. 1950-01-01).
+
+        Returns
+        -------
+        start_date : str
+            The original user input as a string in 'YYYY-MM-DD' format.
+        parsed_start_date : datetime.date
+            The parsed and validated start date object.
+        """
+
         while True:
             try:
                 start_date = input(f"\nEnter a start date (inclusive) [YYYY-MM-DD]: ")
@@ -1025,6 +1348,29 @@ class StockTracker:
 
     @staticmethod
     def get_end_date(today, parsed_start_date):
+        """
+        Prompt the user to enter a valid end date within defined bounds.
+
+        The method repeatedly requests a date from the user until a valid one
+        is provided. A date is considered valid if it occurs strictly after
+        `parsed_start_date` and is no later than tomorrow (today + 1 day).
+        The end date is treated as exclusive by downstream functions.
+
+        Parameters
+        ----------
+        today : datetime.date
+            Reference date used to determine the upper bound. The latest
+            acceptable input is tomorrow (today + 1 day) because the end
+            date will be excluded.
+        parsed_start_date : datetime.date
+            The validated start date; the end date must be strictly after this.
+
+        Returns
+        -------
+        end_date : str
+            The original user input as a string in 'YYYY-MM-DD' format.
+        """
+
         while True:
             try:
                 end_date = input(f"\nEnter an end date (exclusive) [YYYY-MM-DD]: ")
@@ -1040,9 +1386,17 @@ class StockTracker:
 
     @staticmethod
     def get_interval():
+        """
+        Prompt the user to enter a valid data interval.
+
+        Returns
+        -------
+        interval : str
+            The validated interval input by the user.
+        """
+
         print(f"\nValid intervals:")
-        for key in StockTracker.INTERVAL_TO_TIMEDIFF:
-            print(key, end=", ")
+        print(", ".join(StockTracker.INTERVAL_TO_TIMEDIFF.keys()))
         print() # Readability purposes
         while True:
             try:
@@ -1056,6 +1410,18 @@ class StockTracker:
 
     @staticmethod
     def validated_ticker():
+        """
+        Prompt the user to enter a ticker symbol and validate it.
+
+        The method repeatedly requests input until a valid ticker symbol 
+        is provided. A ticker is considered valid if it exists on Yahoo Finance.
+    
+        Returns
+        -------
+        ticker : str
+            The validated ticker symbol.
+        """
+
         while True:
             try:
                 ticker = input(f"\nEnter a ticker: ").strip().upper()
@@ -1073,6 +1439,15 @@ class StockTracker:
         
     @staticmethod  
     def validated_option_yes_or_no():
+        """
+        Prompt the user to enter 'Yes' or 'No' and validate the input.
+
+        Returns
+        -------
+        add_another_ticker : str
+            The user's response, either 'Yes' or 'No'.
+        """
+
         while True:
             try:
                 add_another_ticker = input(f"Would you like to enter another ticker (Yes/No)? ").strip().capitalize()
@@ -1085,6 +1460,21 @@ class StockTracker:
 
     @staticmethod
     def validated_look_back_value(min_look_back):
+        """
+        Prompt the user to enter a lookback period (in days) and validate it
+        against a minimum and maximum allowable value.
+
+        Parameters
+        ----------
+        min_look_back : int
+            The minimum allowed lookback period in days.
+        
+        Returns
+        -------
+        days_back : int
+            The validated lookback period entered by the user.
+        """
+
         while True:
             try:
                 days_back = int(input(f"Enter how far you would like to go back (measured in days) [Max lookback 180 days]: "))
@@ -1097,6 +1487,16 @@ class StockTracker:
         
     @staticmethod
     def validated_email_address():
+        """
+        Prompt the user to enter an email address and validate it
+        against common formatting rules.
+
+        Returns
+        -------
+        recipient_email : str
+            The validated email address entered by the user.
+        """
+        
         while True:
             try:
                 recipient_email = input(f"\nEnter your email address: ").strip()
