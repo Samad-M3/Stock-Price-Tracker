@@ -40,7 +40,7 @@ class StockTracker:
     """
 
     COLUMN_NAMES = ["Date", "Open", "High", "Low", "Close", "Volume", "Ticker"]
-    MAX_LOOKBACK_DAYS = 180
+    MAX_LOOKBACK_DAYS = 40
     INTERVAL_TO_TIMEDIFF = {
         "1m": pd.Timedelta(minutes=1),
         "2m": pd.Timedelta(minutes=2),
@@ -246,6 +246,8 @@ class StockTracker:
                             investment_amount = int(input(f"Enter how much you would like to invest: "))
                             if investment_amount < 1:
                                 raise ValueError(f"Invalid amount, Please enter a positive amount")
+                            elif investment_amount > int(1e9):
+                                raise ValueError(f"Amount is too high, Please try again")
                         except ValueError as e:
                             print(f"{e}\n")
                         else:
@@ -612,7 +614,7 @@ class StockTracker:
         ticker : str
             The stock ticker symbol to analyse (e.g., "AAPL").
         days_range : int
-            Number of past trading days to analyse from today. Maximum allowed is 180 days.
+            Number of past trading days to analyse from today. Maximum allowed is 40 days.
         """
 
         requested_range_dataframe, valid_trading_days, days_range = self.get_requested_range_dataframe(ticker, days_range)
@@ -656,7 +658,7 @@ class StockTracker:
         ticker : str
             The stock ticker symbol to generate the chart for.
         days_range : int
-            Number of past trading days to include from today. Maximum allowed is 180 days.
+            Number of past trading days to include from today. Maximum allowed is 40 days.
         """
 
         requested_range_dataframe, valid_trading_days, days_range = self.get_requested_range_dataframe(ticker, days_range)
@@ -700,7 +702,7 @@ class StockTracker:
         ticker : str
             The stock ticker symbol to generate the chart for.
         days_range : int
-            Number of past trading days to include from today. Maximum allowed is 180 days.
+            Number of past trading days to include from today. Maximum allowed is 40 days.
         """
 
         requested_range_dataframe, valid_trading_days, days_range = self.get_requested_range_dataframe(ticker, days_range)
@@ -737,7 +739,7 @@ class StockTracker:
         ticker : str
             The stock ticker symbol to generate the chart for.
         days_range : int
-            Number of past trading days to include from today. Maximum allowed is 180 days.
+            Number of past trading days to include from today. Maximum allowed is 40 days.
         """
         
         requested_range_dataframe, valid_trading_days, days_range = self.get_requested_range_dataframe(ticker, days_range)
@@ -779,7 +781,7 @@ class StockTracker:
         ticker : str
             The stock ticker symbol to generate the chart for.
         days_range : int
-            Number of past trading days to include from today. Maximum allowed is 180 days.
+            Number of past trading days to include from today. Maximum allowed is 40 days.
         """
 
         requested_range_dataframe, valid_trading_days, days_range = self.get_requested_range_dataframe(ticker, days_range)
@@ -821,7 +823,7 @@ class StockTracker:
         ticker : str
             The stock ticker symbol to generate the chart for.
         days_range : int
-            Number of past trading days to include from today. Maximum allowed is 180 days.
+            Number of past trading days to include from today. Maximum allowed is 40 days.
         investment_amount : int
             The initial amount invested at the start of the selected range.
         """
@@ -1135,7 +1137,7 @@ class StockTracker:
             The stock ticker symbol to retrieve data for.
         days_range : int
             The number of most recent trading days to include.
-            The maximum lookback is capped (180 days).
+            The maximum lookback is capped (40 days).
             If fewer rows exist for the ticker, the value is adjusted.
 
         Returns
@@ -1464,9 +1466,9 @@ class StockTracker:
             try:
                 days_back = int(input(f"Enter how far you would like to go back (measured in days) [Max lookback {StockTracker.MAX_LOOKBACK_DAYS} days]: "))
                 if days_back > StockTracker.MAX_LOOKBACK_DAYS or days_back < min_look_back:
-                    raise ValueError(f"Invalid lookback period, Please enter a value between {min_look_back} and {StockTracker.MAX_LOOKBACK_DAYS} days\n")
+                    raise ValueError(f"Invalid lookback period, Please enter a value between {min_look_back} and {StockTracker.MAX_LOOKBACK_DAYS} days")
             except ValueError as e:
-                print(e)
+                print(f"{e}\n")
             else:
                 return days_back
         
