@@ -18,12 +18,12 @@ A Python command-line application for tracking, analysing, and visualising stock
 
 1. Clone the repository
 2. Run the following command in your terminal while in the project directory:
-`pip install -r requirements.txt`
+- `pip install -r requirements.txt`
 3. Set the following environment variables on your system so the application can send email alerts:
-`EMAIL_USER` → your email address
-`EMAIL_PASS` → your email app password
+- `EMAIL_USER` → your email address
+- `EMAIL_PASS` → your email app password
 4. Run the application:
-`python main.py`
+- `python main.py`
 5. Automate alerts with Windows Task Scheduler (optional):
     1. Open **Task Scheduler** and create a new task. Give it a descriptive name, e.g., "Stock Price Tracker Alerts"
     2. Go to the **Triggers** tab and create a new trigger:
