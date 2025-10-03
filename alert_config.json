@@ -1,15 +1,5 @@
 {
-    "tickers": [
-        "AMZN",
-        "GOOGL",
-        "AAPL",
-        "TSLA",
-        "NVDA",
-        "MSFT",
-        "MRVL",
-        "NFLX",
-        "^GSPC"
-    ],
-    "threshold": 0.75,
-    "recipient_email": "abdussamadmohit1@gmail.com"
+    "tickers": [],
+    "threshold": null,
+    "recipient_email": ""
 }

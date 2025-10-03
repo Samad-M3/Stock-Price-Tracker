@@ -16,6 +16,7 @@ import os
 import smtplib
 import json
 import socket
+import requests
 from email.message import EmailMessage
 from pathlib import Path
 from datetime import datetime, time
@@ -564,14 +565,17 @@ class StockTracker:
                 else:
                     compiled_history = pd.concat([compiled_history, history], ignore_index=True)
             
-            compiled_history.drop_duplicates(subset=["Date", "Ticker"], inplace=True)
-            compiled_history.sort_values(by=["Ticker", "Date"], inplace=True)
-            try:
-                self.save_to_csv(compiled_history, filename)
-            except PermissionError as e:
-                print(f"\n⚠️  Could not write to {filename}, Check file permissions: {e}")
-            except OSError as e:
-                print(f"\n⚠️  OS error while saving {filename}: {e}")
+            if compiled_history.empty:
+                pass
+            else:
+                compiled_history.drop_duplicates(subset=["Date", "Ticker"], inplace=True)
+                compiled_history.sort_values(by=["Ticker", "Date"], inplace=True)
+                try:
+                    self.save_to_csv(compiled_history, filename)
+                except PermissionError as e:
+                    print(f"\n⚠️  Could not write to {filename}, Check file permissions: {e}")
+                except OSError as e:
+                    print(f"\n⚠️  OS error while saving {filename}: {e}")
 
             if interval == "1d":
                 StockTracker.MASTER_HISTORY = compiled_history
@@ -890,8 +894,6 @@ class StockTracker:
         market_open_time = time(hour=9, minute=30, second=0)
         market_close_time = time(hour=16, minute=0, second=0)
 
-        # eastern_time = time(hour=1, minute=0, second=0)
-
         strings = []
 
         if today in trading_schedule.index.date and eastern_time >= market_close_time:
@@ -927,7 +929,6 @@ class StockTracker:
 
             if not strings:
                 strings.append("No valid alerts generated today.")  
-
             body = f"Daily Stock Alerts:\n\n{'\n'.join(strings)}"
         elif today in trading_schedule.index.date and eastern_time < market_open_time:
             string = "Market not yet open — waiting to open."
@@ -1111,9 +1112,9 @@ class StockTracker:
 
         # Case 4: Check if last row ends before the requested end
         last_row_date = requested_range_dataframe["Date"].iloc[-1]
-        if last_row_date < end:
+        if (last_row_date + StockTracker.INTERVAL_TO_TIMEDIFF[interval]) < end:
             # Gap from just after last available date until requested end
-            gaps.append((last_row_date + StockTracker.INTERVAL_TO_TIMEDIFF[interval], end + StockTracker.INTERVAL_TO_TIMEDIFF[interval]))
+            gaps.append((last_row_date + StockTracker.INTERVAL_TO_TIMEDIFF[interval], end))
 
         return gaps
 
@@ -1160,12 +1161,6 @@ class StockTracker:
         utc_time = datetime.now(tz=ZoneInfo("UTC"))
         eastern_time = utc_time.astimezone(ZoneInfo("America/New_York")).time()
         market_close_time = time(hour=16, minute=0, second=0)
-
-        # Forcing the date
-        # today = datetime(2025, 9, 21).date()
-
-        # Forcing the ET time
-        # eastern_time = time(hour=14, minute=0, second=0)
         
         if ticker in StockTracker.MASTER_HISTORY["Ticker"].values:
             ticker_specific_dataframe = StockTracker.MASTER_HISTORY[StockTracker.MASTER_HISTORY["Ticker"] == ticker]
@@ -1180,9 +1175,11 @@ class StockTracker:
                 list_of_valid_trading_days = []
                 list_of_actual_trading_days = []
 
+                all_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=365), end_date=today)
+
                 # Get all valid trading days up to and including today if it's a trading day
-                # NOTE: valid_trading_days only goes back 90 days (adjust if longer lookback is needed)
-                valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=StockTracker.MAX_LOOKBACK_DAYS), end_date=today)
+                # NOTE: valid_trading_days only goes back 40 trading days (adjust if longer lookback is needed)
+                valid_trading_days = all_trading_days[-StockTracker.MAX_LOOKBACK_DAYS:]
 
                 # Append the last N trading days starting from the most recent (working backwards)
                 for i in range(days_range):
@@ -1211,9 +1208,11 @@ class StockTracker:
                 list_of_valid_trading_days = []
                 list_of_actual_trading_days = []
 
+                all_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=365), end_date=today - pd.Timedelta(days=1))
+
                 # Get all valid trading days up to yesterday
                 # Exclude today because the market is still open; the last valid trading day is yesterday
-                valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=StockTracker.MAX_LOOKBACK_DAYS), end_date=(today - pd.Timedelta(days=1)))
+                valid_trading_days = all_trading_days[-StockTracker.MAX_LOOKBACK_DAYS:]
 
                 # Append the last N trading days starting from the most recent (working backwards)
                 # Because we have excluded today from valid_trading_days, valid_trading_days[-1] would be yesterday
@@ -1243,9 +1242,11 @@ class StockTracker:
                 list_of_valid_trading_days = []
                 list_of_actual_trading_days = []
 
+                all_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=365), end_date=today)
+
                 # Get all valid trading days up to today
                 # If today is not a trading day, valid_trading_days[-1] gives the most recent trading day before today
-                valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=StockTracker.MAX_LOOKBACK_DAYS), end_date=today)
+                valid_trading_days = all_trading_days[-StockTracker.MAX_LOOKBACK_DAYS:]
                 most_recent_trading_day = valid_trading_days[-1].date()
 
                 # Append the last N trading days starting from the most recent (working backwards)
@@ -1270,26 +1271,29 @@ class StockTracker:
         else:
             # Today is a trading day and the market has closed for today
             if today in trading_schedule.index.date and eastern_time >= market_close_time:
+                all_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=365), end_date=today)
                 # Get all valid trading days up to and including today if it's a trading day
                 # NOTE: valid_trading_days only goes back 90 days (adjust if longer lookback is needed)
-                valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=StockTracker.MAX_LOOKBACK_DAYS), end_date=today)
+                valid_trading_days = all_trading_days[-StockTracker.MAX_LOOKBACK_DAYS:]
                 # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
                 # End date: today + 1 day → ensures today’s trading data is included 
                 self.fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), (today + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), "1d")
 
             # Today is a trading day and the market is still open or waiting to open
             elif today in trading_schedule.index.date and eastern_time < market_close_time:
+                all_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=365), end_date=today - pd.Timedelta(days=1))
                 # Get all valid trading days up to yesterday
                 # Exclude today because the market is still open; the last valid trading day is yesterday
-                valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=StockTracker.MAX_LOOKBACK_DAYS), end_date=(today - pd.Timedelta(days=1)))
+                valid_trading_days = all_trading_days[-StockTracker.MAX_LOOKBACK_DAYS:]
                 # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
                 # End date: today → excludes today (market still open), but includes yesterday’s data
                 self.fetch_historical_data([ticker], valid_trading_days[-days_range].strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), "1d")
 
             # Today is not a trading day (weekend/holiday)
             else:
+                all_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=365), end_date=today)
                 # Get all valid trading days up to "today" (if today is not a trading day, this will automatically stop at the most recent valid trading day, e.g. Friday if it's the weekend)
-                valid_trading_days = nyse.valid_days(start_date=today - pd.Timedelta(days=StockTracker.MAX_LOOKBACK_DAYS), end_date=today)
+                valid_trading_days = all_trading_days[-StockTracker.MAX_LOOKBACK_DAYS:]
                 most_recent_trading_day = valid_trading_days[-1].date()
                 # Start date: valid_trading_days[-days_range] → the Nth most recent trading day (inclusive)
                 # End date = most recent trading day + 1 day (exclusive) → ensures the most recent trading day itself is included
@@ -1395,8 +1399,7 @@ class StockTracker:
             else:
                 return interval
 
-    @staticmethod
-    def validated_ticker():
+    def validated_ticker(self):
         """
         Prompt the user to enter a ticker symbol and validate it.
 
@@ -1412,6 +1415,10 @@ class StockTracker:
         while True:
             try:
                 ticker = input(f"\nEnter a ticker: ").strip().upper()
+
+                if not self.has_internet():
+                    raise ValueError("\n⚠️  Network error: Unable to fetch data, Please check your connection")
+
                 ticker_object = yf.Ticker(ticker)
                 history = ticker_object.history(period="1d")
                 if history.empty:
@@ -1419,7 +1426,7 @@ class StockTracker:
             except ValueError as e:
                 print(e)
             except Exception as e:
-                # Something else went wrong (network down, API error, etc.)
+                # Something else went wrong (API error, corrupted response, etc.)
                 print(f"\n⚠️  Unexpected error: {e}")
             else:
                 return ticker
@@ -1464,9 +1471,9 @@ class StockTracker:
 
         while True:
             try:
-                days_back = int(input(f"Enter how far you would like to go back (measured in days) [Max lookback {StockTracker.MAX_LOOKBACK_DAYS} days]: "))
+                days_back = int(input(f"Enter how far you would like to go back (measured in days) [Max lookback {StockTracker.MAX_LOOKBACK_DAYS} trading days]: "))
                 if days_back > StockTracker.MAX_LOOKBACK_DAYS or days_back < min_look_back:
-                    raise ValueError(f"Invalid lookback period, Please enter a value between {min_look_back} and {StockTracker.MAX_LOOKBACK_DAYS} days")
+                    raise ValueError(f"Invalid lookback period, Please enter a value between {min_look_back} and {StockTracker.MAX_LOOKBACK_DAYS}")
             except ValueError as e:
                 print(f"{e}\n")
             else:
@@ -1515,6 +1522,23 @@ class StockTracker:
                 print(e)
             else:
                 return recipient_email
+            
+    @staticmethod
+    def has_internet():
+        """
+        Check if the system has an active internet connection.
+
+        Returns
+        -------
+        bool
+            True if an internet connection is available, False otherwise.
+        """
+
+        try:
+            requests.get("https://finance.yahoo.com", timeout=3)
+            return True
+        except requests.RequestException:
+            return False
 
 if __name__ == "__main__":
     tracker = StockTracker()
